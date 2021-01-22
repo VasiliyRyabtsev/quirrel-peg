@@ -336,6 +336,13 @@ void test_peg(HSQUIRRELVM v)
         return a+a-2*2
     )";
     const char* code = R"(
+        local z = 2000
+        local function a(x, y) {
+            return x+y+1000
+        }
+        return a(222, 333)+z
+    )";
+    const char* code3 = R"(
         local function a(x, y) {
             return x+y+1000
         }

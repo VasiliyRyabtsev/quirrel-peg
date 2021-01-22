@@ -28,8 +28,8 @@ static const char *grammar = R"(
     LocalVarDeclStmt <- IDENTIFIER '=' Expression / IDENTIFIER
     LocalFuncDeclStmt <- IDENTIFIER '(' FuncParams ')' '{' FunctionBody '}'
     FuncParams <- IDENTIFIER? (',' IDENTIFIER)*
-    Expression <- BinaryOpExpr / AtomExpr
-    BinaryOpExpr <- AtomExpr (BINARY_OP AtomExpr)* {
+    Expression <- BinaryOpExpr / PrefixedExpr
+    BinaryOpExpr <- PrefixedExpr (BINARY_OP PrefixedExpr)* {
                             precedence
                             L ??
                             L ||
@@ -43,7 +43,10 @@ static const char *grammar = R"(
                             L / * %
 
     }
-    AtomExpr <- '(' Expression ')' / NUMBER / IDENTIFIER
+    PrefixedExpr <- FunctionCall / Factor
+    Factor <- NUMBER / IDENTIFIER / '(' Expression ')'
+    FunctionCall <- Factor '(' FuncCallArgs ')'
+    FuncCallArgs <- Expression? (','? Expression)*
 
     NUMBER      <- < '-'? [0-9]+ >
     IDENTIFIER  <- < [a-zA-Z_][a-zA-Z_0-9]* >
@@ -150,12 +153,19 @@ public:
         return true;
     }
 
+    void MoveIfCurrentTargetIsLocal() {
+        SQInteger trg = _fs->TopTarget();
+        if(_fs->IsLocal(trg)) {
+            trg = _fs->PopTarget(); //pops the target and moves it
+            _fs->AddInstruction(_OP_MOVE, _fs->PushTarget(), trg);
+        }
+    }
+
 
     bool processNode(const Ast &ast, int depth)
     {
-        //printf("%*cname = %s/%s | path = %s | token = %s\n", depth*2, ' ',
-        //    ast.name.c_str(), ast.original_name.c_str(),
-        //    ast.path.c_str(), ast.is_token ? std::string(ast.token).c_str() : "N/A");
+        //printf("%*cname = %s | token = %s\n", depth*2, ' ',
+        //    ast.name.c_str(), ast.is_token ? std::string(ast.token).c_str() : "N/A");
 
         if (ast.name == "NUMBER") {
             SQInteger target = _fs->PushTarget();
@@ -221,6 +231,22 @@ public:
             _fs->PopTarget();
             _fs->PushLocalVariable(varname);
         }
+        else if (ast.name == "Factor") {
+            const auto& tp = ast.nodes[0]->name;
+            if (tp == "IDENTIFIER") {
+                SQObjectPtr id = makeString(ast.nodes[0]->token);
+                SQInteger pos = _fs->GetLocalVariable(id);
+                if(pos != -1) // Handle a local variable (includes 'this')
+                    _fs->PushTarget(pos);
+                else {
+                    printf("Unknown local variable '%s'\n", _stringval(id));
+                    return false;
+                }
+
+            }
+            if (!processChildren(ast, depth))
+                return false;
+        }
         else if (ast.name == "LocalFuncDeclStmt") {
             assert(ast.nodes[0]->name == "IDENTIFIER");
             assert(ast.nodes[1]->name == "FuncParams");
@@ -262,21 +288,30 @@ public:
             _fs->PopTarget();
             _fs->PushLocalVariable(varname);
         }
-        else if (ast.name == "AtomExpr") {
-            const auto& tp = ast.nodes[0]->name;
-            if (tp == "IDENTIFIER") {
-                SQObjectPtr id = makeString(ast.nodes[0]->token);
-                SQInteger pos = _fs->GetLocalVariable(id);
-                if(pos != -1) // Handle a local variable (includes 'this')
-                    _fs->PushTarget(pos);
-                else {
-                    printf("Unknown local variable '%s'\n", _stringval(id));
-                    return false;
-                }
+        else if (ast.name == "FunctionCall") {
+            assert(ast.nodes.size() == 2);
 
+            // resolve function
+            processNode(*ast.nodes[0].get(), depth+1);
+            _fs->AddInstruction(_OP_MOVE, _fs->PushTarget(), 0);
+
+            Ast *args = ast.nodes[1].get();
+            //printf("%d arg nodes\n", int(args->nodes.size()));
+
+            SQInteger nargs = 1;//this
+            for (size_t i=0; i<args->nodes.size(); ++i) {
+                processNode(*args->nodes[i].get(), depth+1);
+                MoveIfCurrentTargetIsLocal();
+                nargs++;
             }
-            if (!processChildren(ast, depth))
-                return false;
+            for(SQInteger i = 0; i < (nargs - 1); i++)
+                _fs->PopTarget();
+            SQInteger stackbase = _fs->PopTarget();
+            SQInteger closure = _fs->PopTarget();
+            SQInteger target = _fs->PushTarget();
+            assert(target >= -1);
+            assert(target < 255);
+            _fs->AddInstruction(_OP_CALL, target, closure, stackbase, nargs);
         }
         else {
             if (!processChildren(ast, depth))
