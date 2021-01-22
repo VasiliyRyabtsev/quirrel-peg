@@ -331,9 +331,15 @@ void Interactive(HSQUIRRELVM v)
 
 void test_peg(HSQUIRRELVM v)
 {
-    const char* code = R"(
+    const char* code1 = R"(
         local a = 444+1
         return a+a-2*2
+    )";
+    const char* code = R"(
+        local function a(x, y) {
+            return x+y+1000
+        }
+        return a
     )";
     //const char* code = "return 333";
     size_t len=scstrlen(code);

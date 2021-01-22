@@ -20,13 +20,14 @@
 using namespace peg;
 
 static const char *grammar = R"(
-    Prog <- Statement (Statement)*
+    FunctionBody <- Statement*
     Statement <- ReturnStatement / 'local' LocalDeclStatement / Expression
 
     ReturnStatement <- 'return' Expression
-    LocalDeclStatement <- LocalVarDeclStmt / 'function' LocalFuncDeclStmt
+    LocalDeclStatement <- 'function' LocalFuncDeclStmt / LocalVarDeclStmt
     LocalVarDeclStmt <- IDENTIFIER '=' Expression / IDENTIFIER
-    LocalFuncDeclStmt <- IDENTIFIER '{' Statement '}'
+    LocalFuncDeclStmt <- IDENTIFIER '(' FuncParams ')' '{' FunctionBody '}'
+    FuncParams <- IDENTIFIER? (',' IDENTIFIER)*
     Expression <- BinaryOpExpr / AtomExpr
     BinaryOpExpr <- AtomExpr (BINARY_OP AtomExpr)* {
                             precedence
@@ -202,7 +203,6 @@ public:
             _fs->AddInstruction(op, _fs->PushTarget(), op1, op2, op3);
         }
         else if (ast.name == "LocalVarDeclStmt") {
-            printf("LocalVarDeclStmt cp1, tgt stack size = %d / %d\n", int(_fs->_targetstack.size()), int(_fs->GetStackSize()));
             SQObjectPtr varname = makeString(ast.nodes[0]->token);
             if (!CheckDuplicateLocalIdentifier(varname, _SC("Local variable"), false))
                 return false;
@@ -218,6 +218,47 @@ public:
             else {
                 _fs->AddInstruction(_OP_LOADNULLS, _fs->PushTarget(), 1);
             }
+            _fs->PopTarget();
+            _fs->PushLocalVariable(varname);
+        }
+        else if (ast.name == "LocalFuncDeclStmt") {
+            assert(ast.nodes[0]->name == "IDENTIFIER");
+            assert(ast.nodes[1]->name == "FuncParams");
+            assert(ast.nodes[2]->name == "FunctionBody");
+            SQObjectPtr varname = makeString(ast.nodes[0]->token);
+            if (!CheckDuplicateLocalIdentifier(varname, _SC("Function"), false))
+                return false;
+
+            SQFuncState *funcstate = _fs->PushChildState(_ss(_vm));
+            funcstate->_name = varname;
+            funcstate->AddParameter(_fs->CreateString(_SC("this")));
+            funcstate->_sourcename = _sourcename;
+            funcstate->_sourcename_ptr = _sourcename_ptr;
+            SQInteger defparams = 0;
+            for (const auto &paramNode : ast.nodes[1]->nodes) {
+                SQObjectPtr paramname = makeString(paramNode->token);
+                funcstate->AddParameter(paramname);
+            }
+
+            SQFuncState *currchunk = _fs;
+            _fs = funcstate;
+
+            // body
+            processNode(*ast.nodes[2].get(), depth+1);
+
+            //funcstate->AddLineInfos(_lex._prevtoken == _SC('\n')?_lex._lasttokenline:_lex._currentline, _lineinfo, true);
+            funcstate->AddInstruction(_OP_RETURN, -1);
+            funcstate->SetStackSize(0);
+
+            SQFunctionProto *func = funcstate->BuildProto();
+#ifdef _DEBUG_DUMP
+            funcstate->Dump(func);
+#endif
+            _fs = currchunk;
+            _fs->_functions.push_back(func);
+            _fs->PopChildState();
+
+            _fs->AddInstruction(_OP_CLOSURE, _fs->PushTarget(), _fs->_functions.size() - 1, 0);
             _fs->PopTarget();
             _fs->PushLocalVariable(varname);
         }
