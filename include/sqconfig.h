@@ -152,3 +152,5 @@ typedef char SQChar;
 #else
 #define _PRINT_INT_FMT _SC("%d")
 #endif
+
+#define _DEBUG_DUMP

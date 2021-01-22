@@ -297,8 +297,8 @@ public:
     }
     bool Compile(SQObjectPtr &o)
     {
-        _debugline = 1;
-        _debugop = 0;
+        // _debugline = 1;
+        // _debugop = 0;
 
         _scopedconsts.push_back();
         SQFuncState funcstate(_ss(_vm), NULL,ThrowError,this);
@@ -1997,8 +1997,8 @@ private:
     SQLexer _lex;
     bool _lineinfo;
     bool _raiseerror;
-    SQInteger _debugline;
-    SQInteger _debugop;
+    // SQInteger _debugline;
+    // SQInteger _debugop;
     SQExpState   _es;
     SQScope _scope;
     SQExpressionContext _expression_context;

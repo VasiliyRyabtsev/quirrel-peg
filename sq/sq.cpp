@@ -5,6 +5,10 @@
 #include <string.h>
 #include <stdarg.h>
 
+//#if !defined(__cplusplus) || __cplusplus < 201703L
+//#error "Requires complete C++17 support"
+//#endif
+
 #if defined(_MSC_VER) && defined(_DEBUG)
 #include <crtdbg.h>
 #include <conio.h>
@@ -304,6 +308,7 @@ void Interactive(HSQUIRRELVM v)
         if(i>0){
             SQInteger oldtop=sq_gettop(v);
             if(SQ_SUCCEEDED(sq_compilebuffer(v,buffer,i,_SC("interactive console"),SQTrue))){
+            //if(SQ_SUCCEEDED(sq_compilepeg(v,buffer,i,_SC("interactive console"),SQTrue))){
                 sq_pushroottable(v);
                 if(SQ_SUCCEEDED(sq_call(v,1,retval,SQTrue)) &&  retval){
                     scprintf(_SC("\n"));
@@ -321,6 +326,35 @@ void Interactive(HSQUIRRELVM v)
             sq_settop(v,oldtop);
         }
     }
+}
+
+
+void test_peg(HSQUIRRELVM v)
+{
+    const char* code = "return 555+111*3";
+    //const char* code = "return 333";
+    size_t len=scstrlen(code);
+    SQInteger oldtop=sq_gettop(v);
+    //if(SQ_SUCCEEDED(sq_compilebuffer(v,buffer,i,_SC("interactive console"),SQTrue))){
+    if(SQ_SUCCEEDED(sq_compilepeg(v,code,len,_SC("test code"),SQTrue))){
+        sq_pushroottable(v);
+        SQBool retval = SQTrue;
+        bool succeeded = SQ_SUCCEEDED(sq_call(v,1,retval,SQTrue));
+        printf("closure call succeeded = %d, retval = %d\n", succeeded, int(retval));
+        if (succeeded && retval) {
+            scprintf(_SC("\n"));
+            sq_pushroottable(v);
+            sq_pushstring(v,_SC("print"),-1);
+            sq_get(v,-2);
+            sq_pushroottable(v);
+            sq_push(v,-4);
+            sq_call(v,2,SQFalse,SQTrue);
+            retval=0;
+            scprintf(_SC("\n"));
+        }
+    }
+
+    sq_settop(v,oldtop);
 }
 
 int main(int argc, char* argv[])
@@ -353,6 +387,9 @@ int main(int argc, char* argv[])
 
     sqstd_register_command_line_args(v, argc, argv);
 
+#if 1
+    test_peg(v);
+#else
     //gets arguments
     switch(getargs(v,argc,argv,&retval))
     {
@@ -364,6 +401,7 @@ int main(int argc, char* argv[])
     default:
         break;
     }
+#endif
 
     delete module_mgr;
     sq_close(v);

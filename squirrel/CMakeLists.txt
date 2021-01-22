@@ -2,6 +2,7 @@ set(SQUIRREL_SRC sqapi.cpp
                  sqbaselib.cpp
                  sqclass.cpp
                  sqcompiler.cpp
+                 sqpegcompiler.cpp
                  sqdebug.cpp
                  sqdirect.cpp
                  sqfuncstate.cpp
