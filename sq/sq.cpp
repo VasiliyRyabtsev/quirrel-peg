@@ -331,7 +331,10 @@ void Interactive(HSQUIRRELVM v)
 
 void test_peg(HSQUIRRELVM v)
 {
-    const char* code = "return 555+111*3";
+    const char* code = R"(
+        local a = 444+1
+        return a+a-2*2
+    )";
     //const char* code = "return 333";
     size_t len=scstrlen(code);
     SQInteger oldtop=sq_gettop(v);

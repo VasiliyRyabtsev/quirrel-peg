@@ -1,6 +1,9 @@
 # Folders created at compilation
 bin/
 lib/
+build/
+x86/
+x64/
 
 # Folders created at documentation generation
 doc/build/
@@ -10,3 +13,12 @@ Release/
 *.vcxproj
 *.vcxproj.filters
 *.vcxproj.user
+
+CMakeFiles/
+*.dir/
+
+.vscode/
+CMakeCache.txt
+Makefile
+cmake_install.cmake
+squirrel.sln

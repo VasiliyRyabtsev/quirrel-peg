@@ -20,9 +20,13 @@
 using namespace peg;
 
 static const char *grammar = R"(
-    Statement <- ReturnStatement / Expression
+    Prog <- Statement (Statement)*
+    Statement <- ReturnStatement / 'local' LocalDeclStatement / Expression
 
     ReturnStatement <- 'return' Expression
+    LocalDeclStatement <- LocalVarDeclStmt / 'function' LocalFuncDeclStmt
+    LocalVarDeclStmt <- IDENTIFIER '=' Expression / IDENTIFIER
+    LocalFuncDeclStmt <- IDENTIFIER '{' Statement '}'
     Expression <- BinaryOpExpr / AtomExpr
     BinaryOpExpr <- AtomExpr (BINARY_OP AtomExpr)* {
                             precedence
@@ -38,18 +42,17 @@ static const char *grammar = R"(
                             L / * %
 
     }
-    MulExpr <- AtomExpr (('*' / '/') AtomExpr)*
-    AtomExpr <- '(' Expression ')' / NUMBER / NAME
+    AtomExpr <- '(' Expression ')' / NUMBER / IDENTIFIER
 
     NUMBER      <- < '-'? [0-9]+ >
-    NAME        <- < [a-zA-Z_][a-zA-Z_0-9]* >
+    IDENTIFIER  <- < [a-zA-Z_][a-zA-Z_0-9]* >
     BINARY_OP   <- '??' / '||' / '&&' / 'in' / '^' / '&' /
                     '==' / '!=' / '<=>' / '<' / '<=' / '>' / '>=' / 'instanceof' /
                     '<<' / '>>' / '>>>' / '+' / '-' / '/' / '*' / '%'
 
 
     %whitespace <- [ \t\r\n]*
-    %word       <- NAME
+    %word       <- IDENTIFIER
 )";
 
 
@@ -84,12 +87,68 @@ public:
         //longjmp(_errorjmp,1);
     }
 
-    bool processChildren(const Ast &ast, int depth)
-    {
+    bool processChildren(const Ast &ast, int depth) {
         for (const auto &node : ast.nodes)
             processNode(*node.get(), depth + 1);
         return true;
     }
+
+
+    SQObjectPtr makeString(const std::string_view &s) {
+        return _fs->CreateString(s.data(), s.length());
+    }
+
+    bool IsConstant(const SQObject &name,SQObject &e)
+    {
+        if (IsLocalConstant(name, e))
+            return true;
+        if (IsGlobalConstant(name, e))
+            return true;
+        return false;
+    }
+
+    bool IsLocalConstant(const SQObject &name,SQObject &e)
+    {
+        SQObjectPtr val;
+        for (SQInteger i=SQInteger(_scopedconsts.size())-1; i>=0; --i) {
+            SQObjectPtr &tbl = _scopedconsts[i];
+            if (!sq_isnull(tbl) && _table(tbl)->Get(name,val)) {
+                e = val;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool IsGlobalConstant(const SQObject &name,SQObject &e)
+    {
+        SQObjectPtr val;
+        if(_table(_ss(_vm)->_consts)->Get(name,val)) {
+            e = val;
+            return true;
+        }
+        return false;
+    }
+
+    bool CheckDuplicateLocalIdentifier(const SQObject &name, const SQChar *desc, bool ignore_global_consts)
+    {
+        if (_fs->GetLocalVariable(name) >= 0) {
+            printf(_SC("%s name '%s' conflicts with existing local variable\n"), desc, _string(name)->_val);
+            return false;
+        }
+        if (_stringval(name) == _stringval(_fs->_name)) {
+            printf(_SC("%s name '%s' conflicts with function name\n"), desc, _stringval(name));
+            return false;
+        }
+
+        SQObject constant;
+        if (ignore_global_consts ? IsLocalConstant(name, constant) : IsConstant(name, constant)) {
+            printf(_SC("%s name '%s' conflicts with existing constant/enum\n"), desc, _stringval(name));
+            return false;
+        }
+        return true;
+    }
+
 
     bool processNode(const Ast &ast, int depth)
     {
@@ -97,7 +156,15 @@ public:
         //    ast.name.c_str(), ast.original_name.c_str(),
         //    ast.path.c_str(), ast.is_token ? std::string(ast.token).c_str() : "N/A");
 
-        if (ast.name == "ReturnStatement") {
+        if (ast.name == "NUMBER") {
+            SQInteger target = _fs->PushTarget();
+            SQInteger value = ast.token_to_number<SQInteger>();
+            if (value <= INT_MAX && value > INT_MIN) //does it fit in 32 bits?
+                _fs->AddInstruction(_OP_LOADINT, target, value);
+            else
+                _fs->AddInstruction(_OP_LOAD, target, _fs->GetNumericConstant(value));
+        }
+        else if (ast.name == "ReturnStatement") {
             SQInteger retexp = _fs->GetCurrentPos()+1;
 
             if (!processChildren(ast, depth))
@@ -107,14 +174,6 @@ public:
                 _fs->AddInstruction(_OP_POPTRAP, _fs->_traps, 0);
             _fs->_returnexp = retexp;
             _fs->AddInstruction(_OP_RETURN, 1, _fs->PopTarget(),_fs->GetStackSize());
-        }
-        else if (ast.name == "NUMBER") {
-            SQInteger target = _fs->PushTarget();
-            SQInteger value = ast.token_to_number<SQInteger>();
-            if (value <= INT_MAX && value > INT_MIN) //does it fit in 32 bits?
-                _fs->AddInstruction(_OP_LOADINT, target, value);
-            else
-                _fs->AddInstruction(_OP_LOAD, target, _fs->GetNumericConstant(value));
         }
         else if (ast.name == "BinaryOpExpr") {
             assert(ast.nodes.size() == 3);
@@ -130,21 +189,53 @@ public:
             }
                    
             auto opStr = ast.nodes[1]->token;
-            if (opStr == "+")
-                op = _OP_ADD;
-            else if (opStr == "-")
-                op = _OP_SUB;
-            else if (opStr == "*")
-                op = _OP_MUL;
-            else if (opStr == "/")
-                op = _OP_DIV;
+            if (opStr == "+")           op = _OP_ADD;
+            else if (opStr == "-")      op = _OP_SUB;
+            else if (opStr == "*")      op = _OP_MUL;
+            else if (opStr == "/")      op = _OP_DIV;
+            else if (opStr == "%")      op = _OP_MOD;
             else {
                 printf("Unknown operator '%s'\n", std::string(opStr).c_str());
                 return false;
             }
 
             _fs->AddInstruction(op, _fs->PushTarget(), op1, op2, op3);
+        }
+        else if (ast.name == "LocalVarDeclStmt") {
+            printf("LocalVarDeclStmt cp1, tgt stack size = %d / %d\n", int(_fs->_targetstack.size()), int(_fs->GetStackSize()));
+            SQObjectPtr varname = makeString(ast.nodes[0]->token);
+            if (!CheckDuplicateLocalIdentifier(varname, _SC("Local variable"), false))
+                return false;
 
+            if (ast.nodes.size() > 1) {
+                if (!processChildren(ast, depth))
+                    return false;
+                SQInteger src = _fs->PopTarget();
+                SQInteger dest = _fs->PushTarget();
+                if (dest != src)
+                    _fs->AddInstruction(_OP_MOVE, dest, src);
+            }
+            else {
+                _fs->AddInstruction(_OP_LOADNULLS, _fs->PushTarget(), 1);
+            }
+            _fs->PopTarget();
+            _fs->PushLocalVariable(varname);
+        }
+        else if (ast.name == "AtomExpr") {
+            const auto& tp = ast.nodes[0]->name;
+            if (tp == "IDENTIFIER") {
+                SQObjectPtr id = makeString(ast.nodes[0]->token);
+                SQInteger pos = _fs->GetLocalVariable(id);
+                if(pos != -1) // Handle a local variable (includes 'this')
+                    _fs->PushTarget(pos);
+                else {
+                    printf("Unknown local variable '%s'\n", _stringval(id));
+                    return false;
+                }
+
+            }
+            if (!processChildren(ast, depth))
+                return false;
         }
         else {
             if (!processChildren(ast, depth))

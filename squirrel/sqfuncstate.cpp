@@ -249,6 +249,7 @@ SQInteger SQFuncState::TopTarget(){
 }
 SQInteger SQFuncState::PopTarget()
 {
+    assert(!_targetstack.empty());
     SQUnsignedInteger npos=_targetstack.back();
     assert(npos < _vlocals.size());
     SQLocalVarInfo &t = _vlocals[npos];
