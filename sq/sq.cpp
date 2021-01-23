@@ -335,7 +335,7 @@ void test_peg(HSQUIRRELVM v)
         local a = 444+1
         return a+a-2*2
     )";
-    const char* code = R"(
+    const char* code2 = R"(
         local z = 2000
         local function a(x, y) {
             return x+y+1000
@@ -348,7 +348,8 @@ void test_peg(HSQUIRRELVM v)
         }
         return a
     )";
-    //const char* code = "return 333";
+    const char* code = "return 1000.1 + 234. + .0234 + 50000";
+    const char* code5 = "return -1.23e-5";
     size_t len=scstrlen(code);
     SQInteger oldtop=sq_gettop(v);
     //if(SQ_SUCCEEDED(sq_compilebuffer(v,buffer,i,_SC("interactive console"),SQTrue))){

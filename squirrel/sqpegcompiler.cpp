@@ -44,11 +44,12 @@ static const char *grammar = R"(
 
     }
     PrefixedExpr <- FunctionCall / Factor
-    Factor <- NUMBER / IDENTIFIER / '(' Expression ')'
+    Factor <- FLOAT / INTEGER / IDENTIFIER / '(' Expression ')'
     FunctionCall <- Factor '(' FuncCallArgs ')'
     FuncCallArgs <- Expression? (','? Expression)*
 
-    NUMBER      <- < '-'? [0-9]+ >
+    INTEGER     <- < ['-+']? [0-9]+ >
+    FLOAT       <- < [-+]?[0-9]* '.'? [0-9]+([eE][-+]?[0-9]+)? / ['-+']?[0-9]+ '.' [0-9]* >
     IDENTIFIER  <- < [a-zA-Z_][a-zA-Z_0-9]* >
     BINARY_OP   <- '??' / '||' / '&&' / 'in' / '^' / '&' /
                     '==' / '!=' / '<=>' / '<' / '<=' / '>' / '>=' / 'instanceof' /
@@ -167,11 +168,19 @@ public:
         //printf("%*cname = %s | token = %s\n", depth*2, ' ',
         //    ast.name.c_str(), ast.is_token ? std::string(ast.token).c_str() : "N/A");
 
-        if (ast.name == "NUMBER") {
+        if (ast.name == "INTEGER") {
             SQInteger target = _fs->PushTarget();
             SQInteger value = ast.token_to_number<SQInteger>();
             if (value <= INT_MAX && value > INT_MIN) //does it fit in 32 bits?
                 _fs->AddInstruction(_OP_LOADINT, target, value);
+            else
+                _fs->AddInstruction(_OP_LOAD, target, _fs->GetNumericConstant(value));
+        }
+        else if (ast.name == "FLOAT") {
+            SQInteger target = _fs->PushTarget();
+            SQFloat value = ast.token_to_number<SQFloat>();
+            if (sizeof(SQFloat) == sizeof(SQInt32))
+                _fs->AddInstruction(_OP_LOADFLOAT, target,*((SQInt32 *)&value));
             else
                 _fs->AddInstruction(_OP_LOAD, target, _fs->GetNumericConstant(value));
         }
@@ -358,18 +367,18 @@ public:
         parser parser(grammar);
 
 
-        // //parser["NUMBER"] = [](const SemanticValues& vs, std::any& dt) {
-        // //    printf("NUMBER action\n");
+        // //parser["INTEGER"] = [](const SemanticValues& vs, std::any& dt) {
+        // //    printf("INTEGER action\n");
         // //};
-        // parser["NUMBER"].enter = [](const char* s, size_t n, std::any& dt) {
-        //     printf("NUMBER enter\n");
+        // parser["INTEGER"].enter = [](const char* s, size_t n, std::any& dt) {
+        //     printf("INTEGER enter\n");
         // };
-        // parser["NUMBER"] = [](const SemanticValues& vs) {
-        //     printf("NUMBER action\n");
+        // parser["INTEGER"] = [](const SemanticValues& vs) {
+        //     printf("INTEGER action\n");
         //     return vs.token_to_number<SQInteger>();
         // };
-        // parser["NUMBER"].leave = [](const char* s, size_t n, size_t matchlen, std::any& value, std::any& dt) {
-        //     printf("NUMBER leave\n");
+        // parser["INTEGER"].leave = [](const char* s, size_t n, size_t matchlen, std::any& value, std::any& dt) {
+        //     printf("INTEGER leave\n");
         // };
 
         parser.log = [](size_t line, size_t col, const std::string& msg) {
