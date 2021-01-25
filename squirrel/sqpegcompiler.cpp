@@ -43,10 +43,11 @@ static const char *grammar = R"(
                             L / * %
 
     }
-    PrefixedExpr    <- FunctionCall / Factor
+    PrefixedExpr    <- Factor (FunctionCall / SlotGet)*
     Factor          <- FLOAT / INTEGER / BOOLEAN / NULL / STRING_LITERAL / IDENTIFIER / ArrayInit / '(' Expression ')'
 
-    FunctionCall    <- Factor '(' ArgValues ')'
+    FunctionCall    <- '(' ArgValues ')'
+    SlotGet         <- '[' Expression ']'
     ArgValues       <- Expression? (','? Expression)*
     ArrayInit       <- '[' ArgValues ']'
 
@@ -312,13 +313,11 @@ public:
             _fs->PushLocalVariable(varname);
         }
         else if (ast.name == "FunctionCall") {
-            assert(ast.nodes.size() == 2);
+            assert(ast.nodes.size() == 1);
 
-            // resolve function
-            processNode(*ast.nodes[0].get(), depth+1);
             _fs->AddInstruction(_OP_MOVE, _fs->PushTarget(), 0);
 
-            Ast *args = ast.nodes[1].get();
+            Ast *args = ast.nodes[0].get();
             //printf("%d arg nodes\n", int(args->nodes.size()));
 
             SQInteger nargs = 1;//this
@@ -335,6 +334,19 @@ public:
             assert(target >= -1);
             assert(target < 255);
             _fs->AddInstruction(_OP_CALL, target, closure, stackbase, nargs);
+        }
+        else if (ast.name == "SlotGet") {
+            assert(ast.nodes.size() == 1);
+
+            //_fs->AddInstruction(_OP_MOVE, _fs->PushTarget(), 0);
+
+            processNode(*ast.nodes[0].get(), depth+1);
+
+            SQInteger p2 = _fs->PopTarget(); //src in OP_GET
+            SQInteger p1 = _fs->PopTarget(); //key in OP_GET
+            SQInteger flags = 0;
+
+            _fs->AddInstruction(_OP_GET, _fs->PushTarget(), p1, p2, flags);
         }
         else if (ast.name == "ArrayInit") {
             assert(ast.nodes.size() == 1);
