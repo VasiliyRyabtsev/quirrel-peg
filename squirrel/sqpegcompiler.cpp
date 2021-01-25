@@ -44,13 +44,14 @@ static const char *grammar = R"(
 
     }
     PrefixedExpr <- FunctionCall / Factor
-    Factor <- FLOAT / INTEGER / BOOLEAN / STRING_LITERAL / IDENTIFIER / '(' Expression ')'
+    Factor <- FLOAT / INTEGER / BOOLEAN / NULL / STRING_LITERAL / IDENTIFIER / '(' Expression ')'
     FunctionCall <- Factor '(' FuncCallArgs ')'
     FuncCallArgs <- Expression? (','? Expression)*
 
     INTEGER     <- < ['-+']? [0-9]+ >
     FLOAT       <- < [-+]?[0-9]* '.'? [0-9]+([eE][-+]?[0-9]+)? / ['-+']?[0-9]+ '.' [0-9]* >
     BOOLEAN     <- < 'true' | 'false' >
+    NULL        <- 'null'
     STRING_LITERAL <- '"' < ([^"] / '""')* > '"'
     IDENTIFIER  <- < [a-zA-Z_][a-zA-Z_0-9]* >
     BINARY_OP   <- '??' / '||' / '&&' / 'in' / '^' / '&' /
@@ -189,6 +190,9 @@ public:
         else if (ast.name == "BOOLEAN") {
             _fs->AddInstruction(_OP_LOADBOOL, _fs->PushTarget(), ast.token == "true"?1:0);
         }
+        else if (ast.name == "NULL") {
+            _fs->AddInstruction(_OP_LOADNULLS, _fs->PushTarget(), 1);
+        }
         else if (ast.name == "STRING_LITERAL") {
             _fs->AddInstruction(_OP_LOAD, _fs->PushTarget(), _fs->GetConstant(_fs->CreateString(ast.token.data(), ast.token.length())));
         }
@@ -215,7 +219,7 @@ public:
                 printf("BINARY_OP expected\n");
                 return false;
             }
-                   
+
             auto opStr = ast.nodes[1]->token;
             if (opStr == "+")           op = _OP_ADD;
             else if (opStr == "-")      op = _OP_SUB;
