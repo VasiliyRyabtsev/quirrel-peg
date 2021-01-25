@@ -44,12 +44,13 @@ static const char *grammar = R"(
 
     }
     PrefixedExpr <- FunctionCall / Factor
-    Factor <- FLOAT / INTEGER / STRING_LITERAL / IDENTIFIER / '(' Expression ')'
+    Factor <- FLOAT / INTEGER / BOOLEAN / STRING_LITERAL / IDENTIFIER / '(' Expression ')'
     FunctionCall <- Factor '(' FuncCallArgs ')'
     FuncCallArgs <- Expression? (','? Expression)*
 
     INTEGER     <- < ['-+']? [0-9]+ >
     FLOAT       <- < [-+]?[0-9]* '.'? [0-9]+([eE][-+]?[0-9]+)? / ['-+']?[0-9]+ '.' [0-9]* >
+    BOOLEAN     <- < 'true' | 'false' >
     STRING_LITERAL <- '"' < ([^"] / '""')* > '"'
     IDENTIFIER  <- < [a-zA-Z_][a-zA-Z_0-9]* >
     BINARY_OP   <- '??' / '||' / '&&' / 'in' / '^' / '&' /
@@ -184,6 +185,9 @@ public:
                 _fs->AddInstruction(_OP_LOADFLOAT, target,*((SQInt32 *)&value));
             else
                 _fs->AddInstruction(_OP_LOAD, target, _fs->GetNumericConstant(value));
+        }
+        else if (ast.name == "BOOLEAN") {
+            _fs->AddInstruction(_OP_LOADBOOL, _fs->PushTarget(), ast.token == "true"?1:0);
         }
         else if (ast.name == "STRING_LITERAL") {
             _fs->AddInstruction(_OP_LOAD, _fs->PushTarget(), _fs->GetConstant(_fs->CreateString(ast.token.data(), ast.token.length())));

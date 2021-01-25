@@ -351,7 +351,8 @@ void test_peg(HSQUIRRELVM v)
     const char* code4 = "return 1000.1 + 234. + .0234 + 50000";
     const char* code5 = "return -1.23e-5";
     const char* code6 = "return \"Ab\\nc\"\"deF\"";
-    const char* code = R"(return "Abc""deF" + 111)";
+    const char* code7 = R"(return "Abc""deF" + 111)";
+    const char* code = R"(return true)";
     size_t len=scstrlen(code);
     SQInteger oldtop=sq_gettop(v);
     //if(SQ_SUCCEEDED(sq_compilebuffer(v,buffer,i,_SC("interactive console"),SQTrue))){
