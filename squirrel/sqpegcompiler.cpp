@@ -44,12 +44,13 @@ static const char *grammar = R"(
 
     }
     PrefixedExpr <- FunctionCall / Factor
-    Factor <- FLOAT / INTEGER / IDENTIFIER / '(' Expression ')'
+    Factor <- FLOAT / INTEGER / STRING_LITERAL / IDENTIFIER / '(' Expression ')'
     FunctionCall <- Factor '(' FuncCallArgs ')'
     FuncCallArgs <- Expression? (','? Expression)*
 
     INTEGER     <- < ['-+']? [0-9]+ >
     FLOAT       <- < [-+]?[0-9]* '.'? [0-9]+([eE][-+]?[0-9]+)? / ['-+']?[0-9]+ '.' [0-9]* >
+    STRING_LITERAL <- '"' < ([^"] / '""')* > '"'
     IDENTIFIER  <- < [a-zA-Z_][a-zA-Z_0-9]* >
     BINARY_OP   <- '??' / '||' / '&&' / 'in' / '^' / '&' /
                     '==' / '!=' / '<=>' / '<' / '<=' / '>' / '>=' / 'instanceof' /
@@ -183,6 +184,9 @@ public:
                 _fs->AddInstruction(_OP_LOADFLOAT, target,*((SQInt32 *)&value));
             else
                 _fs->AddInstruction(_OP_LOAD, target, _fs->GetNumericConstant(value));
+        }
+        else if (ast.name == "STRING_LITERAL") {
+            _fs->AddInstruction(_OP_LOAD, _fs->PushTarget(), _fs->GetConstant(_fs->CreateString(ast.token.data(), ast.token.length())));
         }
         else if (ast.name == "ReturnStatement") {
             SQInteger retexp = _fs->GetCurrentPos()+1;
