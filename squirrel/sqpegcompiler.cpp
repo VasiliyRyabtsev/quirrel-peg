@@ -43,10 +43,12 @@ static const char *grammar = R"(
                             L / * %
 
     }
-    PrefixedExpr <- FunctionCall / Factor
-    Factor <- FLOAT / INTEGER / BOOLEAN / NULL / STRING_LITERAL / IDENTIFIER / '(' Expression ')'
-    FunctionCall <- Factor '(' FuncCallArgs ')'
-    FuncCallArgs <- Expression? (','? Expression)*
+    PrefixedExpr    <- FunctionCall / Factor
+    Factor          <- FLOAT / INTEGER / BOOLEAN / NULL / STRING_LITERAL / IDENTIFIER / ArrayInit / '(' Expression ')'
+
+    FunctionCall    <- Factor '(' ArgValues ')'
+    ArgValues       <- Expression? (','? Expression)*
+    ArrayInit       <- '[' ArgValues ']'
 
     INTEGER     <- < ['-+']? [0-9]+ >
     FLOAT       <- < [-+]?[0-9]* '.'? [0-9]+([eE][-+]?[0-9]+)? / ['-+']?[0-9]+ '.' [0-9]* >
@@ -333,6 +335,20 @@ public:
             assert(target >= -1);
             assert(target < 255);
             _fs->AddInstruction(_OP_CALL, target, closure, stackbase, nargs);
+        }
+        else if (ast.name == "ArrayInit") {
+            assert(ast.nodes.size() == 1);
+            assert(ast.nodes[0]->name == "ArgValues");
+            const auto &args = ast.nodes[0];
+
+            SQInteger len = args->nodes.size();
+            _fs->AddInstruction(_OP_NEWOBJ, _fs->PushTarget(), len, 0, NOT_ARRAY);
+            for (SQInteger key=0; key<len; ++key) {
+                processNode(*args->nodes[key].get(), depth+1);
+                SQInteger val = _fs->PopTarget();
+                SQInteger array = _fs->TopTarget();
+                _fs->AddInstruction(_OP_APPENDARRAY, array, val, AAT_STACK);
+            }
         }
         else {
             if (!processChildren(ast, depth))
