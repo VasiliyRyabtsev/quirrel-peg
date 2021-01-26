@@ -21,7 +21,7 @@ using namespace peg;
 
 static const char *grammar = R"(
     FunctionBody <- Statement*
-    Statement <- ReturnStatement / 'local' LocalDeclStatement / Expression
+    Statement <- (ReturnStatement / 'local' LocalDeclStatement / VarModifyStmt / Expression) # (EOL / EOF)
 
     ReturnStatement <- 'return' Expression
     LocalDeclStatement <- 'function' LocalFuncDeclStmt / LocalVarDeclStmt
@@ -51,6 +51,8 @@ static const char *grammar = R"(
     SlotNamedGet    <- '.' IDENTIFIER
     ArgValues       <- Expression? (','? Expression)*
     ArrayInit       <- '[' ArgValues ']'
+    VarModifyStmt   <- IDENTIFIER VarModifyOp Expression
+    VarModifyOp     <- '=' / '+=' / '-='
 
     INTEGER     <- < ['-+']? [0-9]+ >
     FLOAT       <- < [-+]?[0-9]* '.'? [0-9]+([eE][-+]?[0-9]+)? / ['-+']?[0-9]+ '.' [0-9]* >
@@ -62,6 +64,8 @@ static const char *grammar = R"(
                     '==' / '!=' / '<=>' / '<' / '<=' / '>' / '>=' / 'instanceof' /
                     '<<' / '>>' / '>>>' / '+' / '-' / '/' / '*' / '%'
 
+    EOL <- '\r\n' / '\n' / '\r'
+    EOF <- !.
 
     %whitespace <- [ \t\r\n]*
     %word       <- IDENTIFIER
@@ -389,6 +393,30 @@ public:
             SQInteger p2 = _fs->PopTarget(); //src in OP_GET
             SQInteger p1 = _fs->PopTarget(); //key in OP_GET
             _fs->AddInstruction(_OP_GET, _fs->PushTarget(), p1, p2, flags);
+        }
+        else if (ast.name == "VarModifyStmt") {
+            assert(ast.nodes.size() == 3);
+
+            SQObjectPtr id = makeString(ast.nodes[0]->token);
+            SQInteger pos = _fs->GetLocalVariable(id);
+            if (pos == -1) {
+                printf("Unknown local variable '%s'\n", _stringval(id));
+                return false;
+            }
+
+            _fs->PushTarget(pos);
+
+            if (ast.nodes[1]->token != "=") {
+                printf("Only '=' is supported for now\n");
+                return false;
+            }
+
+            if (!processNode(*ast.nodes[2].get(), depth+1))
+                return false;
+
+            SQInteger src = _fs->PopTarget();
+            SQInteger dst = pos; //_fs->TopTarget();
+            _fs->AddInstruction(_OP_MOVE, dst, src);
         }
         else if (ast.name == "ArrayInit") {
             assert(ast.nodes.size() == 1);
