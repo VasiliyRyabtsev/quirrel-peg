@@ -21,7 +21,7 @@ using namespace peg;
 
 static const char *grammar = R"(
     FunctionBody <- Statement*
-    Statement <- (ReturnStatement / 'local' LocalDeclStatement / VarModifyStmt / Expression) # (EOL / EOF)
+    Statement <- (ReturnStatement / 'local' LocalDeclStatement / VarModifyStmt / SlotModifyStmt / Expression) # (EOL / EOF)
 
     ReturnStatement <- 'return' Expression
     LocalDeclStatement <- 'function' LocalFuncDeclStmt / LocalVarDeclStmt
@@ -51,8 +51,13 @@ static const char *grammar = R"(
     SlotNamedGet    <- '.' IDENTIFIER
     ArgValues       <- Expression? (','? Expression)*
     ArrayInit       <- '[' ArgValues ']'
+
     VarModifyStmt   <- IDENTIFIER VarModifyOp Expression
     VarModifyOp     <- '=' / '+=' / '-='
+    #SlotModifyStmt  <- PrefixedExpr '[' Expression ']' SlotModifyOp Expression
+    SlotModifyStmt  <- Factor '[' Expression ']' SlotModifyOp Expression
+    SlotModifyOp    <- '=' / '<-'
+
 
     INTEGER     <- < ['-+']? [0-9]+ >
     FLOAT       <- < [-+]?[0-9]* '.'? [0-9]+([eE][-+]?[0-9]+)? / ['-+']?[0-9]+ '.' [0-9]* >
@@ -417,6 +422,17 @@ public:
             SQInteger src = _fs->PopTarget();
             SQInteger dst = pos; //_fs->TopTarget();
             _fs->AddInstruction(_OP_MOVE, dst, src);
+        }
+        else if (ast.name == "SlotModifyStmt") {
+            assert(ast.nodes.size() == 4);
+            assert(ast.nodes[2]->token == "=" || ast.nodes[2]->token == "<-");
+            processChildren(ast, depth);
+
+            SQInteger val = _fs->PopTarget();
+            SQInteger key = _fs->PopTarget();
+            SQInteger src = _fs->PopTarget();
+            SQOpcode  op = ast.nodes[2]->token == "=" ? _OP_SET : _OP_NEWSLOT;
+            _fs->AddInstruction(op, _fs->PushTarget(), src, key, val);
         }
         else if (ast.name == "ArrayInit") {
             assert(ast.nodes.size() == 1);
