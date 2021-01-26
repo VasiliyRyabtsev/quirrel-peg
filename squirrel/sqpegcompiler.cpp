@@ -43,11 +43,12 @@ static const char *grammar = R"(
                             L / * %
 
     }
-    PrefixedExpr    <- Factor (FunctionCall / SlotGet)*
+    PrefixedExpr    <- Factor (FunctionCall / SlotGet / SlotNamedGet)*
     Factor          <- FLOAT / INTEGER / BOOLEAN / NULL / STRING_LITERAL / IDENTIFIER / ArrayInit / '(' Expression ')'
 
     FunctionCall    <- '(' ArgValues ')'
     SlotGet         <- '[' Expression ']'
+    SlotNamedGet    <- '.' IDENTIFIER
     ArgValues       <- Expression? (','? Expression)*
     ArrayInit       <- '[' ArgValues ']'
 
@@ -98,12 +99,33 @@ public:
         //longjmp(_errorjmp,1);
     }
 
-    bool processChildren(const Ast &ast, int depth) {
-        for (const auto &node : ast.nodes)
-            processNode(*node.get(), depth + 1);
-        return true;
-    }
 
+    bool CanBeDefaultDelegate(const SQObjectPtr &key)
+    {
+        if (sq_type(key) != OT_STRING)
+            return false;
+
+        // this can be optimized by keeping joined list/table of used keys
+        SQTable *delegTbls[] = {
+            _table(_fs->_sharedstate->_table_default_delegate),
+            _table(_fs->_sharedstate->_array_default_delegate),
+            _table(_fs->_sharedstate->_string_default_delegate),
+            _table(_fs->_sharedstate->_number_default_delegate),
+            _table(_fs->_sharedstate->_generator_default_delegate),
+            _table(_fs->_sharedstate->_closure_default_delegate),
+            _table(_fs->_sharedstate->_thread_default_delegate),
+            _table(_fs->_sharedstate->_class_default_delegate),
+            _table(_fs->_sharedstate->_instance_default_delegate),
+            _table(_fs->_sharedstate->_weakref_default_delegate),
+            _table(_fs->_sharedstate->_userdata_default_delegate)
+        };
+        SQObjectPtr tmp;
+        for (SQInteger i=0; i<sizeof(delegTbls)/sizeof(delegTbls[0]); ++i) {
+            if (delegTbls[i]->Get(key, tmp))
+                return true;
+        }
+        return false;
+    }
 
     SQObjectPtr makeString(const std::string_view &s) {
         return _fs->CreateString(s.data(), s.length());
@@ -166,6 +188,12 @@ public:
             trg = _fs->PopTarget(); //pops the target and moves it
             _fs->AddInstruction(_OP_MOVE, _fs->PushTarget(), trg);
         }
+    }
+
+    bool processChildren(const Ast &ast, int depth) {
+        for (const auto &node : ast.nodes)
+            processNode(*node.get(), depth + 1);
+        return true;
     }
 
 
@@ -346,6 +374,20 @@ public:
             SQInteger p1 = _fs->PopTarget(); //key in OP_GET
             SQInteger flags = 0;
 
+            _fs->AddInstruction(_OP_GET, _fs->PushTarget(), p1, p2, flags);
+        }
+        else if (ast.name == "SlotNamedGet") {
+            assert(ast.nodes.size() == 1);
+
+            SQInteger flags = 0;
+            SQObjectPtr constant = makeString(ast.nodes[0]->token);
+            if (CanBeDefaultDelegate(constant))
+                flags |= OP_GET_FLAG_ALLOW_DEF_DELEGATE;
+
+            _fs->AddInstruction(_OP_LOAD, _fs->PushTarget(), _fs->GetConstant(constant));
+
+            SQInteger p2 = _fs->PopTarget(); //src in OP_GET
+            SQInteger p1 = _fs->PopTarget(); //key in OP_GET
             _fs->AddInstruction(_OP_GET, _fs->PushTarget(), p1, p2, flags);
         }
         else if (ast.name == "ArrayInit") {
