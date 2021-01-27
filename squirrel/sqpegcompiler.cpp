@@ -299,10 +299,12 @@ public:
             const auto& tp = ast.nodes[0]->name;
             if (tp == "IDENTIFIER") {
                 SQObjectPtr id = makeString(ast.nodes[0]->token);
-                SQInteger pos = _fs->GetLocalVariable(id);
-                if(pos != -1) // Handle a local variable (includes 'this')
+                SQInteger pos;
+                if ((pos = _fs->GetLocalVariable(id)) != -1) // Handle a local variable (includes 'this')
                     _fs->PushTarget(pos);
-                else {
+                else if ((pos = _fs->GetOuterVariable(id)) != -1) {
+                    _fs->AddInstruction(_OP_GETOUTER, _fs->PushTarget(), pos);
+                } else {
                     printf("Unknown local variable '%s'\n", _stringval(id));
                     return false;
                 }
@@ -406,13 +408,17 @@ public:
             assert(ast.nodes.size() == 3);
 
             SQObjectPtr id = makeString(ast.nodes[0]->token);
-            SQInteger pos = _fs->GetLocalVariable(id);
-            if (pos == -1) {
+            SQInteger pos;
+            bool isOuter = false;
+            if ((pos = _fs->GetLocalVariable(id)) != -1) {
+                _fs->PushTarget(pos);
+            } else if ((pos = _fs->GetOuterVariable(id)) != -1) {
+                _fs->AddInstruction(_OP_GETOUTER, _fs->PushTarget(), pos);
+                isOuter = true;
+            } else {
                 printf("Unknown local variable '%s'\n", _stringval(id));
                 return false;
             }
-
-            _fs->PushTarget(pos);
 
             if (ast.nodes[1]->token != "=") {
                 printf("Only '=' is supported for now\n");
@@ -422,9 +428,15 @@ public:
             if (!processNode(*ast.nodes[2].get(), depth+1))
                 return false;
 
-            SQInteger src = _fs->PopTarget();
-            SQInteger dst = pos; //_fs->TopTarget();
-            _fs->AddInstruction(_OP_MOVE, dst, src);
+            if (!isOuter) {
+                SQInteger src = _fs->PopTarget();
+                SQInteger dst = pos; //_fs->TopTarget();
+                _fs->AddInstruction(_OP_MOVE, dst, src);
+            } else {
+                SQInteger src = _fs->PopTarget();
+                SQInteger dst = _fs->PushTarget();
+                _fs->AddInstruction(_OP_SETOUTER, dst, pos, src);
+            }
         }
         else if (ast.name == "SlotModifyStmt") {
             assert(ast.nodes.size() == 4);
@@ -462,12 +474,15 @@ public:
                     _fs->AddInstruction(_OP_LOAD, _fs->PushTarget(), _fs->GetConstant(key));
 
                     if (item->nodes.size()==1) {
-                        SQInteger pos = _fs->GetLocalVariable(key);
-                        if (pos < 0) {
+                        SQInteger pos;
+                        if ((pos = _fs->GetLocalVariable(key)) != -1)
+                            _fs->PushTarget(pos);
+                        else if ((pos = _fs->GetOuterVariable(key)) != -1)
+                            _fs->AddInstruction(_OP_GETOUTER, _fs->PushTarget(), pos);
+                        else {
                             printf("Local variable '%s' not found\n", _stringval(key));
                             return false;
                         }
-                        _fs->PushTarget(pos);
                     }
                 }
                 processNode(*item.get(), depth+1);

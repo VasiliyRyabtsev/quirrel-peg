@@ -342,6 +342,21 @@ void test_peg(HSQUIRRELVM v)
         }
         return a(222, 333)+z
     )";
+    const char* code2a = R"(
+        local z = 2000
+        local function a(x, y) {
+            return x+y+1000+z
+        }
+        return a(222, 333)
+    )";
+    const char* code = R"(
+        local z = 2000
+        local function a(x, y) {
+            z=x+y
+        }
+        a(222,333)
+        return z
+    )";
     const char* code3 = R"(
         local function a(x, y) {
             return x+y+1000
@@ -366,7 +381,7 @@ void test_peg(HSQUIRRELVM v)
         a[0] = "Zzz"
         return a[0]
     )";
-    const char* code = R"(
+    const char* code11 = R"(
         local w = "aqwe"
         local t = {x=123, y=-567+111, w, ["z"]=111}
         return t["w"]
