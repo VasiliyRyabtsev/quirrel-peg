@@ -389,10 +389,24 @@ void test_peg(HSQUIRRELVM v)
         local t = {x=123, y=-567+111, w, ["z"]=111}
         return t["w"]
     )";
-    const char *code = R"(
+    const char *code12 = R"(
         ::print(123)
         ::print("\n--------\n")
         ::print(::max)
+    )";
+    const char *code = R"(
+        if (true)
+            ::print("True\n")
+        else
+            ::print("False\n")
+
+        if (false) {
+            ::print("False\n")
+            local z = 111
+        } else {
+            local x = 123
+            ::print("True\n")
+        }
     )";
     size_t len=scstrlen(code);
     SQInteger oldtop=sq_gettop(v);

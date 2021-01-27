@@ -20,8 +20,8 @@
 using namespace peg;
 
 static const char *grammar = R"(
-    FunctionBody <- Statement*
-    Statement <- (ReturnStatement / 'local' LocalDeclStatement / VarModifyStmt / SlotModifyStmt / Expression) # (EOL / EOF)
+    FunctionBody <- ( Statement ';'* )*
+    Statement <- (ReturnStatement / 'local' LocalDeclStatement / VarModifyStmt / SlotModifyStmt / IfStmt / Expression) # (EOL / EOF)
 
     ReturnStatement <- 'return' Expression
     LocalDeclStatement <- 'function' LocalFuncDeclStmt / LocalVarDeclStmt
@@ -61,6 +61,7 @@ static const char *grammar = R"(
     SlotModifyStmt  <- Factor '[' Expression ']' SlotModifyOp Expression
     SlotModifyOp    <- '=' / '<-'
 
+    IfStmt      <- 'if' '(' Expression ')' ('{' FunctionBody '}' / Statement) ('else' ('{' FunctionBody '}' / Statement))?
 
     INTEGER     <- < [-+]? [0-9]+ >
     FLOAT       <- < [-+]?[0-9]* '.'? [0-9]+([eE][-+]?[0-9]+)? / ['-+']?[0-9]+ '.' [0-9]* >
@@ -538,6 +539,25 @@ public:
                 SQInteger table = tblPos ; // _fs->TopTarget(); //<<BECAUSE OF THIS NO COMMON EMIT FUNC IS POSSIBLE
                 _fs->AddInstruction(_OP_NEWSLOT, 0xFF, table, key, val);
             }
+        }
+        else if (ast.name == "IfStmt") {
+            assert(ast.nodes.size() == 2 || ast.nodes.size() == 3);
+            assert(ast.nodes[0]->name == "Expression");
+            processNode(*ast.nodes[0].get(), depth+1);
+
+            _fs->AddInstruction(_OP_JZ, _fs->PopTarget());
+            SQInteger jnepos = _fs->GetCurrentPos();
+            processNode(*ast.nodes[1].get(), depth+1);
+            SQInteger endifblock = _fs->GetCurrentPos();
+
+            bool hasElse = ast.nodes.size() == 3;
+            if (hasElse) {
+                _fs->AddInstruction(_OP_JMP);
+                SQInteger jmppos = _fs->GetCurrentPos();
+                processNode(*ast.nodes[2].get(), depth+1);
+                _fs->SetInstructionParam(jmppos, 1, _fs->GetCurrentPos() - jmppos);
+            }
+            _fs->SetInstructionParam(jnepos, 1, endifblock - jnepos + (hasElse?1:0));
         }
         else {
             if (!processChildren(ast, depth))
