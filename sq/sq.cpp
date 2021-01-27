@@ -349,7 +349,7 @@ void test_peg(HSQUIRRELVM v)
         }
         return a(222, 333)
     )";
-    const char* code = R"(
+    const char* code2b = R"(
         local z = 2000
         local function a(x, y) {
             z=x+y
@@ -385,6 +385,11 @@ void test_peg(HSQUIRRELVM v)
         local w = "aqwe"
         local t = {x=123, y=-567+111, w, ["z"]=111}
         return t["w"]
+    )";
+    const char *code = R"(
+        ::print(123)
+        ::print("\n--------\n")
+        ::print(::max)
     )";
     size_t len=scstrlen(code);
     SQInteger oldtop=sq_gettop(v);

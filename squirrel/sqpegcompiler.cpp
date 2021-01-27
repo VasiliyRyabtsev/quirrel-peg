@@ -44,7 +44,7 @@ static const char *grammar = R"(
 
     }
     PrefixedExpr    <- Factor (FunctionCall / SlotGet / SlotNamedGet)*
-    Factor          <- FLOAT / INTEGER / BOOLEAN / NULL / STRING_LITERAL / IDENTIFIER / ArrayInit / TableInit / '(' Expression ')'
+    Factor          <- FLOAT / INTEGER / BOOLEAN / NULL / STRING_LITERAL / IDENTIFIER / ROOTGET / ArrayInit / TableInit / '(' Expression ')'
 
     FunctionCall    <- '(' ArgValues ')'
     SlotGet         <- '[' Expression ']'
@@ -71,6 +71,7 @@ static const char *grammar = R"(
     BINARY_OP   <- '??' / '||' / '&&' / 'in' / '^' / '&' /
                     '==' / '!=' / '<=>' / '<' / '<=' / '>' / '>=' / 'instanceof' /
                     '<<' / '>>' / '>>>' / '+' / '-' / '/' / '*' / '%'
+    ROOTGET    <- '::' IDENTIFIER
 
     EOL <- '\r\n' / '\n' / '\r'
     EOF <- !.
@@ -238,6 +239,17 @@ public:
         }
         else if (ast.name == "STRING_LITERAL") {
             _fs->AddInstruction(_OP_LOAD, _fs->PushTarget(), _fs->GetConstant(_fs->CreateString(ast.token.data(), ast.token.length())));
+        }
+        else if (ast.name == "ROOTGET") {
+            _fs->AddInstruction(_OP_LOADROOT, _fs->PushTarget());
+
+            SQObjectPtr constant = makeString(ast.nodes[0]->token);
+            _fs->AddInstruction(_OP_LOAD, _fs->PushTarget(), _fs->GetConstant(constant));
+
+            SQInteger src = _fs->PopTarget();
+            SQInteger id = _fs->PopTarget();
+            SQInteger flags = 0;
+            _fs->AddInstruction(_OP_GET, _fs->PushTarget(), id, src, flags);
         }
         else if (ast.name == "ReturnStatement") {
             SQInteger retexp = _fs->GetCurrentPos()+1;
