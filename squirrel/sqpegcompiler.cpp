@@ -203,12 +203,44 @@ public:
         }
     }
 
+    std::string unescapeString(const std::string_view& s) {
+        std::string res;
+        res.reserve(s.length()+1);
+
+#define APPEND_CHAR(c) res.append(1, c)
+        for (size_t i=0, n=s.length(); i<n; ++i) {
+            char c = s[i];
+            if (c=='\\' && i<n-1) {
+                switch (s[i+1]) {
+                    case _SC('t'): APPEND_CHAR(_SC('\t')); break;
+                    case _SC('a'): APPEND_CHAR(_SC('\a')); break;
+                    case _SC('b'): APPEND_CHAR(_SC('\b')); break;
+                    case _SC('n'): APPEND_CHAR(_SC('\n')); break;
+                    case _SC('r'): APPEND_CHAR(_SC('\r')); break;
+                    case _SC('v'): APPEND_CHAR(_SC('\v')); break;
+                    case _SC('f'): APPEND_CHAR(_SC('\f')); break;
+                    case _SC('0'): APPEND_CHAR(_SC('\0')); break;
+                    case _SC('\\'): APPEND_CHAR(_SC('\\')); break;
+                    case _SC('"'):  APPEND_CHAR(_SC('"'));  break;
+                    case _SC('\''): APPEND_CHAR(_SC('\'')); break;
+                    default:
+                        res.append(1, '\\');
+                        res.append(1, s[i+1]);
+                }
+                ++i;
+                continue;
+            }
+            res.append(1, c);
+        }
+#undef APPEND_CHAR
+        return res;
+    }
+
     bool processChildren(const Ast &ast, int depth) {
         for (const auto &node : ast.nodes)
             processNode(*node.get(), depth + 1);
         return true;
     }
-
 
     bool processNode(const Ast &ast, int depth)
     {
@@ -238,7 +270,8 @@ public:
             _fs->AddInstruction(_OP_LOADNULLS, _fs->PushTarget(), 1);
         }
         else if (ast.name == "STRING_LITERAL") {
-            _fs->AddInstruction(_OP_LOAD, _fs->PushTarget(), _fs->GetConstant(_fs->CreateString(ast.token.data(), ast.token.length())));
+            std::string s = unescapeString(ast.token);
+            _fs->AddInstruction(_OP_LOAD, _fs->PushTarget(), _fs->GetConstant(_fs->CreateString(s.c_str(), s.length())));
         }
         else if (ast.name == "ROOTGET") {
             _fs->AddInstruction(_OP_LOADROOT, _fs->PushTarget());
