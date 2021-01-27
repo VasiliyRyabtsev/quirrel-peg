@@ -97,6 +97,7 @@ int getargs(HSQUIRRELVM v,int argc, char* argv[],SQInteger *retval)
     int i;
     int compiles_only = 0;
 	int run_as_module = 0;
+    SQBool use_peg = SQFalse;
 #ifdef SQUNICODE
     static SQChar temp[500];
 #endif
@@ -122,6 +123,9 @@ int getargs(HSQUIRRELVM v,int argc, char* argv[],SQInteger *retval)
                     break;
                 case 'm':
                     run_as_module = 1;
+                    break;
+                case 'p':
+                    use_peg = SQTrue;
                     break;
                 case 'o':
                     if(arg < argc) {
@@ -167,7 +171,7 @@ int getargs(HSQUIRRELVM v,int argc, char* argv[],SQInteger *retval)
             //sq_createslot(v,-3);
             //sq_pop(v,1);
             if(compiles_only) {
-                if(SQ_SUCCEEDED(sqstd_loadfile(v,filename,SQTrue))){
+                if(SQ_SUCCEEDED(sqstd_loadfile(v,filename,SQTrue,false))){
                     const SQChar *outfile = _SC("out.cnut");
                     if(output) {
 #ifdef SQUNICODE
@@ -195,8 +199,7 @@ int getargs(HSQUIRRELVM v,int argc, char* argv[],SQInteger *retval)
                 //if(SQ_SUCCEEDED(sqstd_dofile(v,filename,SQFalse,SQTrue))) {
                     //return _DONE;
                 //}
-
-                if(SQ_SUCCEEDED(sqstd_loadfile(v,filename,SQTrue))) {
+                if(SQ_SUCCEEDED(sqstd_loadfile(v,filename,SQTrue,use_peg))) {
                     int callargs = 1;
                     sq_pushroottable(v);
                     for(i=arg;i<argc;i++)
@@ -445,7 +448,7 @@ int main(int argc, char* argv[])
 
     sqstd_register_command_line_args(v, argc, argv);
 
-#if 1
+#if 0
     test_peg(v);
 #else
     //gets arguments

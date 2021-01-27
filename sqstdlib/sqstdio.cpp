@@ -352,7 +352,7 @@ SQInteger file_write(SQUserPointer file,SQUserPointer p,SQInteger size)
     return sqstd_fwrite(p,1,size,(SQFILE)file);
 }
 
-SQRESULT sqstd_loadfile(HSQUIRRELVM v,const SQChar *filename,SQBool printerror)
+SQRESULT sqstd_loadfile(HSQUIRRELVM v,const SQChar *filename,SQBool printerror,SQBool use_peg)
 {
     SQFILE file = sqstd_fopen(filename,_SC("rb"));
 
@@ -397,11 +397,28 @@ SQRESULT sqstd_loadfile(HSQUIRRELVM v,const SQChar *filename,SQBool printerror)
                     break;//UTF-8 ;
                 default: sqstd_fseek(file,0,SQ_SEEK_SET); break; // ascii
             }
-            IOBuffer buffer;
-            buffer.ptr = 0;
-            buffer.size = 0;
-            buffer.file = file;
-            if(SQ_SUCCEEDED(sq_compile(v,func,&buffer,filename,printerror))){
+            bool succeeded;
+
+            if (use_peg) {
+                sqstd_fseek(file,0,SQ_SEEK_END);
+                SQInteger len = sqstd_ftell(file);
+                sqstd_fseek(file,0,SQ_SEEK_SET);
+                char *buf = new char[len+1];
+                SQInteger res = sqstd_fread(buf, len, 1, file);
+                //assert(res == len);
+                buf[len] = 0;
+
+                succeeded = SQ_SUCCEEDED(sq_compilepeg(v, buf, len, filename, printerror));
+                delete[] buf;
+            }
+            else {
+                IOBuffer buffer;
+                buffer.ptr = 0;
+                buffer.size = 0;
+                buffer.file = file;
+                succeeded = SQ_SUCCEEDED(sq_compile(v,func,&buffer,filename,printerror));
+            }
+            if(succeeded){
                 sqstd_fclose(file);
                 return SQ_OK;
             }
@@ -412,13 +429,13 @@ SQRESULT sqstd_loadfile(HSQUIRRELVM v,const SQChar *filename,SQBool printerror)
     return sq_throwerror(v,_SC("cannot open the file"));
 }
 
-SQRESULT sqstd_dofile(HSQUIRRELVM v,const SQChar *filename,SQBool retval,SQBool printerror)
+SQRESULT sqstd_dofile(HSQUIRRELVM v,const SQChar *filename,SQBool retval,SQBool printerror,SQBool use_peg)
 {
     //at least one entry must exist in order for us to push it as the environment
     if(sq_gettop(v) == 0)
         return sq_throwerror(v,_SC("environment table expected"));
 
-    if(SQ_SUCCEEDED(sqstd_loadfile(v,filename,printerror))) {
+    if(SQ_SUCCEEDED(sqstd_loadfile(v,filename,printerror,use_peg))) {
         sq_push(v,-2);
         if(SQ_SUCCEEDED(sq_call(v,1,retval,SQTrue))) {
             sq_remove(v,retval?-2:-1); //removes the closure
@@ -449,7 +466,7 @@ SQInteger _g_io_loadfile(HSQUIRRELVM v)
     if(sq_gettop(v) >= 3) {
         sq_getbool(v,3,&printerror);
     }
-    if(SQ_SUCCEEDED(sqstd_loadfile(v,filename,printerror)))
+    if(SQ_SUCCEEDED(sqstd_loadfile(v,filename,printerror,false)))
         return 1;
     return SQ_ERROR; //propagates the error
 }
@@ -472,7 +489,7 @@ SQInteger _g_io_dofile(HSQUIRRELVM v)
         sq_getbool(v,3,&printerror);
     }
     sq_push(v,1); //repush the this
-    if(SQ_SUCCEEDED(sqstd_dofile(v,filename,SQTrue,printerror)))
+    if(SQ_SUCCEEDED(sqstd_dofile(v,filename,SQTrue,printerror,SQFalse)))
         return 1;
     return SQ_ERROR; //propagates the error
 }
