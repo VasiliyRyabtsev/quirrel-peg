@@ -361,10 +361,15 @@ void test_peg(HSQUIRRELVM v)
         a = 555
         return a
     )";
-    const char* code = R"(
+    const char* code10 = R"(
         local a = [123, 456]
         a[0] = "Zzz"
         return a[0]
+    )";
+    const char* code = R"(
+        local w = "aqwe"
+        local t = {x=123, y=-567+111, w, ["z"]=111}
+        return t["w"]
     )";
     size_t len=scstrlen(code);
     SQInteger oldtop=sq_gettop(v);

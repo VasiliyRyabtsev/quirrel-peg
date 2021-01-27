@@ -44,13 +44,16 @@ static const char *grammar = R"(
 
     }
     PrefixedExpr    <- Factor (FunctionCall / SlotGet / SlotNamedGet)*
-    Factor          <- FLOAT / INTEGER / BOOLEAN / NULL / STRING_LITERAL / IDENTIFIER / ArrayInit / '(' Expression ')'
+    Factor          <- FLOAT / INTEGER / BOOLEAN / NULL / STRING_LITERAL / IDENTIFIER / ArrayInit / TableInit / '(' Expression ')'
 
     FunctionCall    <- '(' ArgValues ')'
     SlotGet         <- '[' Expression ']'
     SlotNamedGet    <- '.' IDENTIFIER
     ArgValues       <- Expression? (','? Expression)*
     ArrayInit       <- '[' ArgValues ']'
+
+    TableInit       <- '{'  (TableInitItem ','? )* '}'
+    TableInitItem   <- ((IDENTIFIER / ('[' Expression ']') ) '=' Expression) / IDENTIFIER
 
     VarModifyStmt   <- IDENTIFIER VarModifyOp Expression
     VarModifyOp     <- '=' / '+=' / '-='
@@ -59,7 +62,7 @@ static const char *grammar = R"(
     SlotModifyOp    <- '=' / '<-'
 
 
-    INTEGER     <- < ['-+']? [0-9]+ >
+    INTEGER     <- < [-+]? [0-9]+ >
     FLOAT       <- < [-+]?[0-9]* '.'? [0-9]+([eE][-+]?[0-9]+)? / ['-+']?[0-9]+ '.' [0-9]* >
     BOOLEAN     <- < 'true' | 'false' >
     NULL        <- 'null'
@@ -446,6 +449,34 @@ public:
                 SQInteger val = _fs->PopTarget();
                 SQInteger array = _fs->TopTarget();
                 _fs->AddInstruction(_OP_APPENDARRAY, array, val, AAT_STACK);
+            }
+        }
+        else if (ast.name == "TableInit") {
+            SQInteger len = ast.nodes.size();
+            SQInteger tblPos = _fs->PushTarget();
+            _fs->AddInstruction(_OP_NEWOBJ, tblPos, len, 0, NOT_TABLE);
+            for (const auto &item : ast.nodes) {
+                assert(item->name == "TableInitItem");
+                if (item->nodes[0]->name == "IDENTIFIER") {
+                    SQObjectPtr key = makeString(item->nodes[0]->token);
+                    _fs->AddInstruction(_OP_LOAD, _fs->PushTarget(), _fs->GetConstant(key));
+
+                    if (item->nodes.size()==1) {
+                        SQInteger pos = _fs->GetLocalVariable(key);
+                        if (pos < 0) {
+                            printf("Local variable '%s' not found\n", _stringval(key));
+                            return false;
+                        }
+                        _fs->PushTarget(pos);
+                    }
+                }
+                processNode(*item.get(), depth+1);
+
+                SQInteger val = _fs->PopTarget();
+                SQInteger key = _fs->PopTarget();
+                //unsigned char flags = isstatic ? NEW_SLOT_STATIC_FLAG : 0;
+                SQInteger table = tblPos ; // _fs->TopTarget(); //<<BECAUSE OF THIS NO COMMON EMIT FUNC IS POSSIBLE
+                _fs->AddInstruction(_OP_NEWSLOT, 0xFF, table, key, val);
             }
         }
         else {
