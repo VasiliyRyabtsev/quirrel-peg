@@ -315,6 +315,13 @@ public:
             else if (opStr == "*")      op = _OP_MUL;
             else if (opStr == "/")      op = _OP_DIV;
             else if (opStr == "%")      op = _OP_MOD;
+            else if (opStr == "==")     op = _OP_EQ;
+            else if (opStr == "!=")     op = _OP_NE;
+            else if (opStr == ">")      {op = _OP_CMP; op3 = CMP_G;}
+            else if (opStr == "<")      {op = _OP_CMP; op3 = CMP_L;}
+            else if (opStr == ">=")     {op = _OP_CMP; op3 = CMP_GE;}
+            else if (opStr == "<=")     {op = _OP_CMP; op3 = CMP_LE;}
+            else if (opStr == "<=>")    {op = _OP_CMP; op3 = CMP_3W;}
             else {
                 printf("Unknown operator '%s'\n", std::string(opStr).c_str());
                 return false;
