@@ -352,16 +352,18 @@ public:
             const auto& tp = ast.nodes[0]->name;
             if (tp == "IDENTIFIER") {
                 SQObjectPtr id = makeString(ast.nodes[0]->token);
+
                 SQInteger pos;
                 if ((pos = _fs->GetLocalVariable(id)) != -1) // Handle a local variable (includes 'this')
                     _fs->PushTarget(pos);
-                else if ((pos = _fs->GetOuterVariable(id)) != -1) {
+                else if ((pos = _fs->GetOuterVariable(id)) != -1)
                     _fs->AddInstruction(_OP_GETOUTER, _fs->PushTarget(), pos);
-                } else {
+                else if (sq_isstring(_fs->_name) && scstrcmp(_stringval(_fs->_name), _stringval(id))==0)
+                    _fs->AddInstruction(_OP_LOADCALLEE, _fs->PushTarget());
+                else {
                     printf("Unknown local variable '%s'\n", _stringval(id));
                     return false;
                 }
-
             }
             if (!processChildren(ast, depth))
                 return false;
