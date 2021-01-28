@@ -610,21 +610,6 @@ public:
 
         parser parser(grammar);
 
-
-        // //parser["INTEGER"] = [](const SemanticValues& vs, std::any& dt) {
-        // //    printf("INTEGER action\n");
-        // //};
-        // parser["INTEGER"].enter = [](const char* s, size_t n, std::any& dt) {
-        //     printf("INTEGER enter\n");
-        // };
-        // parser["INTEGER"] = [](const SemanticValues& vs) {
-        //     printf("INTEGER action\n");
-        //     return vs.token_to_number<SQInteger>();
-        // };
-        // parser["INTEGER"].leave = [](const char* s, size_t n, size_t matchlen, std::any& value, std::any& dt) {
-        //     printf("INTEGER leave\n");
-        // };
-
         parser.log = [](size_t line, size_t col, const std::string& msg) {
             printf("Parse error at %d:%d: %s", int(line), int(col), msg.c_str());
         };
@@ -644,8 +629,6 @@ public:
         //std::cout << expr << " = " << eval(*ast) << std::endl;
 
         return processAst(*astOpt.get(), o);
-        // o = SQObjectPtr();
-        // return false;
     }
 
 private:
@@ -657,8 +640,6 @@ private:
     const SQChar * _sourcename_ptr;
     bool _lineinfo;
     bool _raiseerror;
-    // SQInteger _debugline;
-    // SQInteger _debugop;
 //    SQScope _scope;
     SQChar _compilererror[MAX_COMPILER_ERROR_LEN];
     SQObjectPtrVec _scopedconsts;
