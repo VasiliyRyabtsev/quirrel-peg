@@ -248,6 +248,10 @@ public:
         //printf("%*cname = %s | token = %s\n", depth*2, ' ',
         //    ast.name.c_str(), ast.is_token ? std::string(ast.token).c_str() : "N/A");
 
+        if (ast.name == "Statement")
+            _fs->AddLineInfos(ast.line, _lineinfo);
+
+
         if (ast.name == "INTEGER") {
             SQInteger target = _fs->PushTarget();
             SQInteger value = ast.token_to_number<SQInteger>();
@@ -593,7 +597,7 @@ public:
         processNode(ast, 0);
 
         _fs->SetStackSize(stacksize);
-        //_fs->AddLineInfos(_lex._currentline, _lineinfo, true);
+        _fs->AddLineInfos(ast.line, _lineinfo, true); //== TODO: check if line is begin or end
         _fs->AddInstruction(_OP_RETURN, 0xFF);
         _fs->SetStackSize(0);
         o =_fs->BuildProto();
