@@ -77,7 +77,10 @@ static const char *grammar = R"(
     EOL <- '\r\n' / '\n' / '\r'
     EOF <- !.
 
-    %whitespace <- [ \t\r\n]*
+    MultilineComment <- '/*' (!'*/' .)* '*/'
+    SingleLineComment <- '//' (!(EOL / EOF) .)* (EOL / EOF)
+
+    %whitespace <- ([ \t\r\n] / MultilineComment / SingleLineComment)*
     %word       <- IDENTIFIER
 )";
 
