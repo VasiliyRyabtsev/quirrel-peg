@@ -43,12 +43,13 @@ static const char *grammar = R"(
                             L / * %
 
     }
-    PrefixedExpr    <- Factor (FunctionCall / SlotGet / SlotNamedGet)*
-    Factor          <- FLOAT / INTEGER / BOOLEAN / NULL / STRING_LITERAL / IDENTIFIER / ROOTGET / ArrayInit / TableInit / '(' Expression ')'
+    PrefixedExpr    <- (LOADROOT RootSlotGet / Factor ) (FunctionCall / SlotGet / SlotNamedGet)*
+    Factor          <- FLOAT / INTEGER / BOOLEAN / NULL / STRING_LITERAL / IDENTIFIER / ArrayInit / TableInit / '(' Expression ')'
 
     FunctionCall    <- '(' ArgValues ')'
     SlotGet         <- '[' Expression ']'
     SlotNamedGet    <- '.' IDENTIFIER
+    RootSlotGet     <- IDENTIFIER
     ArgValues       <- Expression? (','? Expression)*
     ArrayInit       <- '[' ArgValues ']'
 
@@ -72,7 +73,7 @@ static const char *grammar = R"(
     BINARY_OP   <- '??' / '||' / '&&' / 'in' / '^' / '&' /
                     '==' / '!=' / '<=>' / '<' / '<=' / '>' / '>=' / 'instanceof' /
                     '<<' / '>>' / '>>>' / '+' / '-' / '/' / '*' / '%'
-    ROOTGET    <- '::' IDENTIFIER
+    LOADROOT    <- '::'
 
     EOL <- '\r\n' / '\n' / '\r'
     EOF <- !.
@@ -281,16 +282,8 @@ public:
             std::string s = unescapeString(ast.token);
             _fs->AddInstruction(_OP_LOAD, _fs->PushTarget(), _fs->GetConstant(_fs->CreateString(s.c_str(), s.length())));
         }
-        else if (ast.name == "ROOTGET") {
+        else if (ast.name == "LOADROOT") {
             _fs->AddInstruction(_OP_LOADROOT, _fs->PushTarget());
-
-            SQObjectPtr constant = makeString(ast.nodes[0]->token);
-            _fs->AddInstruction(_OP_LOAD, _fs->PushTarget(), _fs->GetConstant(constant));
-
-            SQInteger src = _fs->PopTarget();
-            SQInteger id = _fs->PopTarget();
-            SQInteger flags = 0;
-            _fs->AddInstruction(_OP_GET, _fs->PushTarget(), id, src, flags);
         }
         else if (ast.name == "ReturnStatement") {
             SQInteger retexp = _fs->GetCurrentPos()+1;
@@ -416,55 +409,87 @@ public:
             _fs->PopTarget();
             _fs->PushLocalVariable(varname);
         }
-        else if (ast.name == "FunctionCall") {
-            assert(ast.nodes.size() == 1);
+        else if (ast.name == "PrefixedExpr") {
+            assert(ast.nodes.size() >= 1);
+            assert(ast.nodes[0]->name == "Factor" || ast.nodes[0]->name == "LOADROOT");
+            size_t nNodes = ast.nodes.size();
 
-            _fs->AddInstruction(_OP_MOVE, _fs->PushTarget(), 0);
-
-            Ast *args = ast.nodes[0].get();
-            //printf("%d arg nodes\n", int(args->nodes.size()));
-
-            SQInteger nargs = 1;//this
-            for (size_t i=0; i<args->nodes.size(); ++i) {
-                processNode(*args->nodes[i].get(), depth+1);
-                MoveIfCurrentTargetIsLocal();
-                nargs++;
+            if (!processNode(*ast.nodes[0].get(), depth+1)) {
+                printf("PrefixedExpr error at line %d\n", int(ast.line));
+                return false;
             }
-            for(SQInteger i = 0; i < (nargs - 1); i++)
-                _fs->PopTarget();
-            SQInteger stackbase = _fs->PopTarget();
-            SQInteger closure = _fs->PopTarget();
-            SQInteger target = _fs->PushTarget();
-            assert(target >= -1);
-            assert(target < 255);
-            _fs->AddInstruction(_OP_CALL, target, closure, stackbase, nargs);
+
+            for (size_t i=1; i<nNodes; ++i) {
+                const auto &node = *ast.nodes[i].get();
+                bool nextIsCall = (i<nNodes-1) && ast.nodes[i+1]->name == "FunctionCall";
+                bool needGet = !nextIsCall;
+
+                if (node.name == "SlotGet") {
+                    assert(node.nodes.size() == 1);
+
+                    processNode(*node.nodes[0].get(), depth+1);
+
+                    SQInteger flags = 0;
+
+                    if (needGet) {
+                        SQInteger p2 = _fs->PopTarget(); //src in OP_GET
+                        SQInteger p1 = _fs->PopTarget(); //key in OP_GET
+                        _fs->AddInstruction(_OP_GET, _fs->PushTarget(), p1, p2, flags);
+                    }
+                }
+                else if (node.name == "SlotNamedGet" || node.name == "RootSlotGet") {
+                    assert(node.nodes.size() == 1);
+
+                    SQInteger flags = 0;
+                    SQObjectPtr constant = makeString(node.nodes[0]->token);
+                    if (CanBeDefaultDelegate(constant))
+                        flags |= OP_GET_FLAG_ALLOW_DEF_DELEGATE;
+
+                    _fs->AddInstruction(_OP_LOAD, _fs->PushTarget(), _fs->GetConstant(constant));
+
+                    if (needGet) {
+                        SQInteger p2 = _fs->PopTarget(); //src in OP_GET
+                        SQInteger p1 = _fs->PopTarget(); //key in OP_GET
+                        _fs->AddInstruction(_OP_GET, _fs->PushTarget(), p1, p2, flags);
+                    }
+                }
+                else if (node.name == "FunctionCall") {
+                    assert(node.nodes.size() == 1);
+
+                    {
+                        SQInteger key     = _fs->PopTarget();  /* location of the key */
+                        SQInteger table   = _fs->PopTarget();  /* location of the object */
+                        SQInteger closure = _fs->PushTarget(); /* location for the closure */
+                        SQInteger ttarget = _fs->PushTarget(); /* location for 'this' pointer */
+                        _fs->AddInstruction(_OP_PREPCALL, closure, key, table, ttarget);
+                    }
+
+                    {
+                        Ast *args = node.nodes[0].get();
+                        //printf("%d arg nodes\n", int(args->nodes.size()));
+
+                        SQInteger nargs = 1;//this
+                        for (size_t i=0; i<args->nodes.size(); ++i) {
+                            processNode(*args->nodes[i].get(), depth+2);
+                            MoveIfCurrentTargetIsLocal();
+                            nargs++;
+                        }
+                        for(SQInteger i = 0; i < (nargs - 1); i++)
+                            _fs->PopTarget();
+                        SQInteger stackbase = _fs->PopTarget();
+                        SQInteger closure = _fs->PopTarget();
+                        SQInteger target = _fs->PushTarget();
+                        assert(target >= -1);
+                        assert(target < 255);
+                        _fs->AddInstruction(_OP_CALL, target, closure, stackbase, nargs);
+                    }
+                }
+
+            }
         }
-        else if (ast.name == "SlotGet") {
-            assert(ast.nodes.size() == 1);
-
-            //_fs->AddInstruction(_OP_MOVE, _fs->PushTarget(), 0);
-
-            processNode(*ast.nodes[0].get(), depth+1);
-
-            SQInteger p2 = _fs->PopTarget(); //src in OP_GET
-            SQInteger p1 = _fs->PopTarget(); //key in OP_GET
-            SQInteger flags = 0;
-
-            _fs->AddInstruction(_OP_GET, _fs->PushTarget(), p1, p2, flags);
-        }
-        else if (ast.name == "SlotNamedGet") {
-            assert(ast.nodes.size() == 1);
-
-            SQInteger flags = 0;
-            SQObjectPtr constant = makeString(ast.nodes[0]->token);
-            if (CanBeDefaultDelegate(constant))
-                flags |= OP_GET_FLAG_ALLOW_DEF_DELEGATE;
-
-            _fs->AddInstruction(_OP_LOAD, _fs->PushTarget(), _fs->GetConstant(constant));
-
-            SQInteger p2 = _fs->PopTarget(); //src in OP_GET
-            SQInteger p1 = _fs->PopTarget(); //key in OP_GET
-            _fs->AddInstruction(_OP_GET, _fs->PushTarget(), p1, p2, flags);
+        else if (ast.name == "SlotGet" || ast.name == "SlotNamedGet" || ast.name == "FunctionCall") {
+            printf("'%s' should be processed from PrefixedExpr node\n", ast.name.c_str());
+            return false;
         }
         else if (ast.name == "VarModifyStmt") {
             assert(ast.nodes.size() == 3);
