@@ -419,10 +419,10 @@ public:
                 return false;
             }
 
+            bool needPrepCall = false;
             for (size_t i=1; i<nNodes; ++i) {
                 const auto &node = *ast.nodes[i].get();
                 bool nextIsCall = (i<nNodes-1) && ast.nodes[i+1]->name == "FunctionCall";
-                bool needGet = !nextIsCall;
 
                 if (node.name == "SlotGet") {
                     assert(node.nodes.size() == 1);
@@ -431,7 +431,10 @@ public:
 
                     SQInteger flags = 0;
 
-                    if (needGet) {
+                    if (nextIsCall) {
+                        assert(!needPrepCall);
+                        needPrepCall = true;
+                    } else {
                         SQInteger p2 = _fs->PopTarget(); //src in OP_GET
                         SQInteger p1 = _fs->PopTarget(); //key in OP_GET
                         _fs->AddInstruction(_OP_GET, _fs->PushTarget(), p1, p2, flags);
@@ -447,7 +450,10 @@ public:
 
                     _fs->AddInstruction(_OP_LOAD, _fs->PushTarget(), _fs->GetConstant(constant));
 
-                    if (needGet) {
+                    if (nextIsCall) {
+                        assert(!needPrepCall);
+                        needPrepCall = true;
+                    } else {
                         SQInteger p2 = _fs->PopTarget(); //src in OP_GET
                         SQInteger p1 = _fs->PopTarget(); //key in OP_GET
                         _fs->AddInstruction(_OP_GET, _fs->PushTarget(), p1, p2, flags);
@@ -456,12 +462,18 @@ public:
                 else if (node.name == "FunctionCall") {
                     assert(node.nodes.size() == 1);
 
-                    {
+                    if (needPrepCall) {
+                        // member/slot function
                         SQInteger key     = _fs->PopTarget();  /* location of the key */
                         SQInteger table   = _fs->PopTarget();  /* location of the object */
                         SQInteger closure = _fs->PushTarget(); /* location for the closure */
                         SQInteger ttarget = _fs->PushTarget(); /* location for 'this' pointer */
                         _fs->AddInstruction(_OP_PREPCALL, closure, key, table, ttarget);
+                        needPrepCall = false;
+                    }
+                    else {
+                        // local function
+                        _fs->AddInstruction(_OP_MOVE, _fs->PushTarget(), 0);
                     }
 
                     {
