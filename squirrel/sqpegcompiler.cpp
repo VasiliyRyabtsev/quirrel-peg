@@ -21,11 +21,12 @@ using namespace peg;
 
 static const char *grammar = R"(
     FunctionBody <- ( Statement ';'* )*
-    Statement <- (ReturnStatement / 'local' LocalDeclStatement / VarModifyStmt / SlotModifyStmt / IfStmt / Expression) # (EOL / EOF)
+    Statement <- (ReturnStatement / IfStmt / ForStmt / 'local' LocalDeclStatement / VarModifyStmt / SlotModifyStmt / Expression) # (EOL / EOF)
 
     ReturnStatement <- 'return' Expression
-    LocalDeclStatement <- 'function' LocalFuncDeclStmt / LocalVarDeclStmt
+    LocalDeclStatement <- 'function' LocalFuncDeclStmt / LocalVarsDeclStmt
     LocalVarDeclStmt <- IDENTIFIER '=' Expression / IDENTIFIER
+    LocalVarsDeclStmt <- LocalVarDeclStmt (',' LocalVarDeclStmt)*
     LocalFuncDeclStmt <- IDENTIFIER '(' FuncParams ')' '{' FunctionBody '}'
     FuncParams <- IDENTIFIER? (',' IDENTIFIER)*
     Expression <- BinaryOpExpr / PrefixedExpr
@@ -64,15 +65,21 @@ static const char *grammar = R"(
 
     IfStmt      <- 'if' '(' Expression ')' ('{' FunctionBody '}' / Statement) ('else' ('{' FunctionBody '}' / Statement))?
 
+    ForStmt     <- 'for' '(' ForInit ';' ForCond ';' ForAction ')' ('{' FunctionBody '}' / ';')
+    ForInit     <- ('local' LocalVarsDeclStmt)?
+    ForCond     <- Expression?
+    ForAction   <- Expression? (',' Expression)*
+
     INTEGER     <- < [-+]? [0-9]+ >
     FLOAT       <- < [-+]?[0-9]* '.'? [0-9]+([eE][-+]?[0-9]+)? / ['-+']?[0-9]+ '.' [0-9]* >
     BOOLEAN     <- < 'true' | 'false' >
     NULL        <- 'null'
     STRING_LITERAL <- '"' < ([^"] / '""')* > '"'
     IDENTIFIER  <- < [a-zA-Z_][a-zA-Z_0-9]* >
-    BINARY_OP   <- '??' / '||' / '&&' / 'in' / '^' / '&' /
-                    '==' / '!=' / '<=>' / '<' / '<=' / '>' / '>=' / 'instanceof' /
-                    '<<' / '>>' / '>>>' / '+' / '-' / '/' / '*' / '%'
+    BINARY_OP   <- '??' / '||' / '&&' / '^' / '&' /
+                    '==' / '!=' / '<=>' / '<='/ '>=' / '<<' / '>>' / '>>>' / '<' / '>' /
+                    '+' / '-' / '/' / '*' / '%' /
+                    'in' / 'instanceof'
     LOADROOT    <- '::'
 
     EOL <- '\r\n' / '\n' / '\r'
@@ -84,6 +91,54 @@ static const char *grammar = R"(
     %whitespace <- ([ \t\r\n] / MultilineComment / SingleLineComment)*
     %word       <- IDENTIFIER
 )";
+
+struct SQScope {
+    SQInteger outers;
+    SQInteger stacksize;
+};
+
+#define BEGIN_SCOPE() SQScope __oldscope__ = _scope; \
+                     _scope.outers = _fs->_outers; \
+                     _scope.stacksize = _fs->GetStackSize(); \
+                     _scopedconsts.push_back();
+
+#define RESOLVE_OUTERS() if(_fs->GetStackSize() != _fs->_blockstacksizes.top()) { \
+                            if(_fs->CountOuters(_fs->_blockstacksizes.top())) { \
+                                _fs->AddInstruction(_OP_CLOSE,0,_fs->_blockstacksizes.top()); \
+                            } \
+                        }
+
+#define END_SCOPE_NO_CLOSE() {  if(_fs->GetStackSize() != _scope.stacksize) { \
+                            _fs->SetStackSize(_scope.stacksize); \
+                        } \
+                        _scope = __oldscope__; \
+                        assert(!_scopedconsts.empty()); \
+                        _scopedconsts.pop_back(); \
+                    }
+
+#define END_SCOPE() {   SQInteger oldouters = _fs->_outers;\
+                        if(_fs->GetStackSize() != _scope.stacksize) { \
+                            _fs->SetStackSize(_scope.stacksize); \
+                            if(oldouters != _fs->_outers) { \
+                                _fs->AddInstruction(_OP_CLOSE,0,_scope.stacksize); \
+                            } \
+                        } \
+                        _scope = __oldscope__; \
+                        _scopedconsts.pop_back(); \
+                    }
+
+#define BEGIN_BREAKBLE_BLOCK()  SQInteger __nbreaks__=_fs->_unresolvedbreaks.size(); \
+                            SQInteger __ncontinues__=_fs->_unresolvedcontinues.size(); \
+                            _fs->_breaktargets.push_back(0);_fs->_continuetargets.push_back(0); \
+                            _fs->_blockstacksizes.push_back(_scope.stacksize);
+
+
+#define END_BREAKBLE_BLOCK(continue_target) {__nbreaks__=_fs->_unresolvedbreaks.size()-__nbreaks__; \
+                    __ncontinues__=_fs->_unresolvedcontinues.size()-__ncontinues__; \
+                    if(__ncontinues__>0)ResolveContinues(_fs,__ncontinues__,continue_target); \
+                    if(__nbreaks__>0)ResolveBreaks(_fs,__nbreaks__); \
+                    _fs->_breaktargets.pop_back();_fs->_continuetargets.pop_back(); \
+                    _fs->_blockstacksizes.pop_back(); }
 
 
 class SQPegCompiler
@@ -98,8 +153,8 @@ public:
     {
         _sourcename = SQString::Create(_ss(v), sourcename);
         _sourcename_ptr = v->constStrings.perpetuate(sourcename);
-        // _scope.outers = 0;
-        // _scope.stacksize = 0;
+        _scope.outers = 0;
+        _scope.stacksize = 0;
         _compilererror[0] = _SC('\0');
     }
 
@@ -207,6 +262,28 @@ public:
             _fs->AddInstruction(_OP_MOVE, _fs->PushTarget(), trg);
         }
     }
+
+    void ResolveBreaks(SQFuncState *funcstate, SQInteger ntoresolve)
+    {
+        while(ntoresolve > 0) {
+            SQInteger pos = funcstate->_unresolvedbreaks.back();
+            funcstate->_unresolvedbreaks.pop_back();
+            //set the jmp instruction
+            funcstate->SetInstructionParams(pos, 0, funcstate->GetCurrentPos() - pos, 0);
+            ntoresolve--;
+        }
+    }
+    void ResolveContinues(SQFuncState *funcstate, SQInteger ntoresolve, SQInteger targetpos)
+    {
+        while(ntoresolve > 0) {
+            SQInteger pos = funcstate->_unresolvedcontinues.back();
+            funcstate->_unresolvedcontinues.pop_back();
+            //set the jmp instruction
+            funcstate->SetInstructionParams(pos, 0, targetpos - pos, 0);
+            ntoresolve--;
+        }
+    }
+
 
     std::string unescapeString(const std::string_view& s) {
         std::string res;
@@ -612,6 +689,67 @@ public:
             }
             _fs->SetInstructionParam(jnepos, 1, endifblock - jnepos + (hasElse?1:0));
         }
+        else if (ast.name == "ForStmt") {
+            assert(ast.nodes.size()==3 || ast.nodes.size()==4);
+            const auto &forInitNode = *ast.nodes[0].get();
+            const auto &forCondNode = *ast.nodes[1].get();
+            const auto &forActionNode = *ast.nodes[2].get();
+
+            BEGIN_SCOPE();
+
+            if (!processNode(forInitNode, depth+1))
+                return false;
+
+            _fs->SnoozeOpt();
+            SQInteger jmppos = _fs->GetCurrentPos();
+            SQInteger jzpos = -1;
+
+            if (!forCondNode.nodes.empty()) {
+                if (!processNode(forCondNode, depth+1))
+                    return false;
+                _fs->AddInstruction(_OP_JZ, _fs->PopTarget());
+                jzpos = _fs->GetCurrentPos();
+            }
+
+            _fs->SnoozeOpt();
+            SQInteger expstart = _fs->GetCurrentPos() + 1;
+            for (const auto &node : forActionNode.nodes) {
+                assert(node->name == "Expression");
+                if (!processNode(*node.get(), depth+1))
+                    return false;
+                _fs->PopTarget();
+            }
+
+
+            _fs->SnoozeOpt();
+            SQInteger expend = _fs->GetCurrentPos();
+            SQInteger expsize = (expend - expstart) + 1;
+            SQInstructionVec exp(_fs->_sharedstate->_alloc_ctx);
+            if (expsize > 0) {
+                for (SQInteger i = 0; i < expsize; i++)
+                    exp.push_back(_fs->GetInstruction(expstart + i));
+                _fs->PopInstructions(expsize);
+            }
+
+            BEGIN_BREAKBLE_BLOCK()
+
+            if (ast.nodes.size() == 4) {
+                processNode(*ast.nodes[3].get(), depth+1);
+            }
+
+            SQInteger continuetrg = _fs->GetCurrentPos();
+            if (expsize > 0) {
+                for (SQInteger i = 0; i < expsize; i++)
+                    _fs->AddInstruction(exp[i]);
+            }
+            _fs->AddInstruction(_OP_JMP, 0, jmppos - _fs->GetCurrentPos() - 1, 0);
+            if (jzpos>  0)
+                _fs->SetInstructionParam(jzpos, 1, _fs->GetCurrentPos() - jzpos);
+
+            END_BREAKBLE_BLOCK(continuetrg);
+
+            END_SCOPE();
+        }
         else {
             if (!processChildren(ast, depth))
                 return false;
@@ -686,7 +824,7 @@ private:
     const SQChar * _sourcename_ptr;
     bool _lineinfo;
     bool _raiseerror;
-//    SQScope _scope;
+    SQScope _scope;
     SQChar _compilererror[MAX_COMPILER_ERROR_LEN];
     SQObjectPtrVec _scopedconsts;
 };
