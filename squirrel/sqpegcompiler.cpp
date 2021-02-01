@@ -78,12 +78,18 @@ static const char *grammar = R"(
     BOOLEAN     <- < 'true' | 'false' >
     NULL        <- 'null'
     STRING_LITERAL <- '"' < ([^"] / '""')* > '"'
-    IDENTIFIER  <- < [a-zA-Z_][a-zA-Z_0-9]* >
+    IDENTIFIER  <- < !KEYWORD [a-zA-Z_][a-zA-Z_0-9]* >
     BINARY_OP   <- '??' / '||' / '&&' / '^' / '&' /
                     '==' / '!=' / '<=>' / '<='/ '>=' / '<<' / '>>' / '>>>' / '<' / '>' /
                     '+' / '-' / '/' / '*' / '%' /
                     'in' / 'instanceof'
     LOADROOT    <- '::'
+
+    KEYWORD <- 'while' / 'do' / 'if' / 'else' / 'break' / 'continue' / 'return' / 'null' / 'function' /
+        'local' / 'for' / 'foreach' / 'in' / 'typeof' / 'base' / 'delete' / 'try' / 'catch' / 'throw' /
+        'clone' / 'yield' / 'resume' / 'switch' / 'case' / 'default' / 'this' / 'class' / 'extends' /
+        'constructor' / 'instanceof' / 'true' / 'false' / 'static' / 'enum' / 'const' / '__LINE__' / '__FILE__'
+        / 'rawcall' / 'global' / 'not'
 
     EOL <- '\r\n' / '\n' / '\r'
     EOF <- !.
@@ -92,7 +98,7 @@ static const char *grammar = R"(
     SingleLineComment <- '//' (!(EOL / EOF) .)* (EOL / EOF)
 
     %whitespace <- ([ \t\r\n] / MultilineComment / SingleLineComment)*
-    %word       <- IDENTIFIER
+    %word       <- [a-zA-Z_][a-zA-Z_0-9]*
 )";
 
 struct SQScope {
