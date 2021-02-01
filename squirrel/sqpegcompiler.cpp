@@ -22,7 +22,8 @@ using namespace peg;
 static const char *grammar = R"(
     Statements <- ( Statement (';' / EOL)* )*
     Statement <- (
-        ReturnStatement / IfStmt / ForStmt / 'local' LocalDeclStatement / VarModifyStmt / SlotModifyStmt /
+        ReturnStatement / IfStmt / ForStmt / ForeachStmt /
+        'local' LocalDeclStatement / VarModifyStmt / SlotModifyStmt /
         Expression / '{' Statements '}'
     )
 
@@ -72,6 +73,8 @@ static const char *grammar = R"(
     ForInit     <- ('local' LocalVarsDeclStmt)?
     ForCond     <- Expression?
     ForAction   <- Expression? (',' Expression)*
+
+    ForeachStmt <- 'foreach' '(' IDENTIFIER (',' IDENTIFIER)? 'in' Expression ')' Statement
 
     INTEGER     <- < [-+]? [0-9]+ >
     FLOAT       <- < [-+]?[0-9]* '.'? [0-9]+([eE][-+]?[0-9]+)? / ['-+']?[0-9]+ '.' [0-9]* >
@@ -757,6 +760,61 @@ public:
 
             END_BREAKBLE_BLOCK(continuetrg);
 
+            END_SCOPE();
+        }
+        else if (ast.name == "ForeachStmt") {
+            //     ForeachStmt <- 'foreach' '(' IDENTIFIER (',' IDENTIFIER) 'in' Expression ')' Statement
+            assert(ast.nodes.size() == 3 || ast.nodes.size() == 4);
+
+            SQObject idxname, valname;
+            valname = makeString(ast.nodes[0]->token);
+            if (!CheckDuplicateLocalIdentifier(valname, _SC("Iterator"), false))
+                return false;
+
+            int containerIdx = 1, actionStmtIdx = 2;
+            if (ast.nodes.size() == 4) {
+                idxname = valname;
+                valname = makeString(ast.nodes[1]->token);
+                CheckDuplicateLocalIdentifier(valname, _SC("Iterator"), false);
+                containerIdx = 2;
+                actionStmtIdx = 3;
+            }
+            else {
+                idxname = _fs->CreateString(_SC("@INDEX@"));
+            }
+
+            //save the stack size
+            BEGIN_SCOPE();
+            //put the table in the stack(evaluate the table expression)
+            if (!processNode(*ast.nodes[containerIdx].get(), depth+1))
+                return false;
+
+            SQInteger container = _fs->TopTarget();
+            //push the index local var
+            SQInteger indexpos = _fs->PushLocalVariable(idxname);
+            _fs->AddInstruction(_OP_LOADNULLS, indexpos,1);
+            //push the value local var
+            SQInteger valuepos = _fs->PushLocalVariable(valname);
+            _fs->AddInstruction(_OP_LOADNULLS, valuepos,1);
+            //push reference index
+            SQInteger itrpos = _fs->PushLocalVariable(_fs->CreateString(_SC("@ITERATOR@"))); //use invalid id to make it inaccessible
+            _fs->AddInstruction(_OP_LOADNULLS, itrpos,1);
+            SQInteger jmppos = _fs->GetCurrentPos();
+            _fs->AddInstruction(_OP_FOREACH, container, 0, indexpos);
+            SQInteger foreachpos = _fs->GetCurrentPos();
+            _fs->AddInstruction(_OP_POSTFOREACH, container, 0, indexpos);
+            //generate the statement code
+            BEGIN_BREAKBLE_BLOCK()
+
+            if (!processNode(*ast.nodes[actionStmtIdx].get(), depth+1))
+                return false;
+
+            _fs->AddInstruction(_OP_JMP, 0, jmppos - _fs->GetCurrentPos() - 1);
+            _fs->SetInstructionParam(foreachpos, 1, _fs->GetCurrentPos() - foreachpos);
+            _fs->SetInstructionParam(foreachpos + 1, 1, _fs->GetCurrentPos() - foreachpos);
+            END_BREAKBLE_BLOCK(foreachpos - 1);
+            //restore the local variable stack(remove index,val and ref idx)
+            _fs->PopTarget();
             END_SCOPE();
         }
         else {
