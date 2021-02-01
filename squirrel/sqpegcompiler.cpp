@@ -20,14 +20,17 @@
 using namespace peg;
 
 static const char *grammar = R"(
-    FunctionBody <- ( Statement ';'* )*
-    Statement <- (ReturnStatement / IfStmt / ForStmt / 'local' LocalDeclStatement / VarModifyStmt / SlotModifyStmt / Expression) # (EOL / EOF)
+    Statements <- ( Statement (';' / EOL)* )*
+    Statement <- (
+        ReturnStatement / IfStmt / ForStmt / 'local' LocalDeclStatement / VarModifyStmt / SlotModifyStmt /
+        Expression / '{' Statements '}'
+    )
 
     ReturnStatement <- 'return' Expression
     LocalDeclStatement <- 'function' LocalFuncDeclStmt / LocalVarsDeclStmt
     LocalVarDeclStmt <- IDENTIFIER '=' Expression / IDENTIFIER
     LocalVarsDeclStmt <- LocalVarDeclStmt (',' LocalVarDeclStmt)*
-    LocalFuncDeclStmt <- IDENTIFIER '(' FuncParams ')' '{' FunctionBody '}'
+    LocalFuncDeclStmt <- IDENTIFIER '(' FuncParams ')' '{' Statements '}'
     FuncParams <- IDENTIFIER? (',' IDENTIFIER)*
     Expression <- BinaryOpExpr / PrefixedExpr
     BinaryOpExpr <- PrefixedExpr (BINARY_OP PrefixedExpr)* {
@@ -63,9 +66,9 @@ static const char *grammar = R"(
     SlotModifyStmt  <- Factor '[' Expression ']' SlotModifyOp Expression
     SlotModifyOp    <- '=' / '<-'
 
-    IfStmt      <- 'if' '(' Expression ')' ('{' FunctionBody '}' / Statement) ('else' ('{' FunctionBody '}' / Statement))?
+    IfStmt      <- 'if' '(' Expression ')' ('{' Statements '}' / Statement) ('else' ('{' Statements '}' / Statement))?
 
-    ForStmt     <- 'for' '(' ForInit ';' ForCond ';' ForAction ')' ('{' FunctionBody '}' / ';')
+    ForStmt     <- 'for' '(' ForInit ';' ForCond ';' ForAction ')' ('{' Statements '}' / ';')
     ForInit     <- ('local' LocalVarsDeclStmt)?
     ForCond     <- Expression?
     ForAction   <- Expression? (',' Expression)*
@@ -448,7 +451,7 @@ public:
         else if (ast.name == "LocalFuncDeclStmt") {
             assert(ast.nodes[0]->name == "IDENTIFIER");
             assert(ast.nodes[1]->name == "FuncParams");
-            assert(ast.nodes[2]->name == "FunctionBody");
+            assert(ast.nodes[2]->name == "Statements");
             SQObjectPtr varname = makeString(ast.nodes[0]->token);
             if (!CheckDuplicateLocalIdentifier(varname, _SC("Function"), false))
                 return false;
