@@ -32,7 +32,11 @@ static const char *grammar = R"(
 
     }
     PrefixedExpr    <- (LOADROOT RootSlotGet / Factor ) (FunctionCall / SlotGet / SlotNamedGet)*
-    Factor          <- FLOAT / INTEGER / BOOLEAN / NULL / STRING_LITERAL / IDENTIFIER / ArrayInit / TableInit / '(' Expression ')'
+    Factor          <- FLOAT / INTEGER / BOOLEAN / NULL / STRING_LITERAL / IDENTIFIER /
+                        ArrayInit / TableInit / UnaryOperation / '(' Expression ')'
+
+    UnaryOperation  <- UnaryOperator PrefixedExpr
+    UnaryOperator   <- <'!' / '~' / '-' / 'typeof' / 'resume' / 'clone' >
 
     FunctionCall    <- '(' ArgValues ')'
     SlotGet         <- '[' Expression ']'

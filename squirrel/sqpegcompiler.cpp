@@ -813,6 +813,28 @@ public:
         }
     }
 
+
+    void UnaryOperation(const Ast &ast) {
+        assert(ast.nodes.size() == 2);
+        SQOpcode op;
+        const auto &opStr = ast.nodes[0]->token;
+
+        if (opStr == "!")           op = _OP_NOT;
+        else if (opStr == "~")      op = _OP_BWNOT;
+        else if (opStr == "-")      op = _OP_NEG;
+        else if (opStr == "typeof") op = _OP_TYPEOF;
+        else if (opStr == "resume") op = _OP_RESUME;
+        else if (opStr == "clone")  op = _OP_CLONE;
+        else
+            Error(_SC("Unknown unary operator %s"), std::string(opStr).c_str());
+
+        processNode(ast.nodes[1]);
+
+        SQInteger src = _fs->PopTarget();
+        _fs->AddInstruction(op, _fs->PushTarget(), src);
+    }
+
+
     template <typename T> void processNode(const std::shared_ptr<T> &node)
     {
         processNode(*node.get());
@@ -870,6 +892,8 @@ public:
             ThrowStmt(ast);
         else if (ast.name == "TryCatchStmt")
             TryCatchStmt(ast);
+        else if (ast.name == "UnaryOperation")
+            UnaryOperation(ast);
         else
             processChildren(ast);
     }
