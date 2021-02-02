@@ -902,7 +902,7 @@ public:
 
     bool Compile(const SQChar *src, SQInteger src_len, SQObjectPtr &o)
     {
-        printf("===\n%s\n===\n", src);
+        printf("===\n%.*s\n===\n", int(src_len), src);
 
         parser parser(grammar);
 
