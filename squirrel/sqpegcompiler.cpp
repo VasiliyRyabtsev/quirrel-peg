@@ -846,7 +846,7 @@ public:
         assert(_scopedconsts.size()==1);
     }
 
-    bool Compile(const SQChar *src, SQInteger /*src_len*/, SQObjectPtr &o)
+    bool Compile(const SQChar *src, SQInteger src_len, SQObjectPtr &o)
     {
         printf("===\n%s\n===\n", src);
 
@@ -862,7 +862,7 @@ public:
 
             auto expr = src;
             std::shared_ptr<Ast> ast;
-            if (!parser.parse(expr, ast)) {
+            if (!parser.parse_n(expr, size_t(src_len), ast)) {
                 // std::cout << "syntax error..." << std::endl;
                 // return false;
             }

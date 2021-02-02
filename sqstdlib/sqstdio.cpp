@@ -403,10 +403,10 @@ SQRESULT sqstd_loadfile(HSQUIRRELVM v,const SQChar *filename,SQBool printerror,S
                 sqstd_fseek(file,0,SQ_SEEK_END);
                 SQInteger len = sqstd_ftell(file);
                 sqstd_fseek(file,0,SQ_SEEK_SET);
-                char *buf = new char[len+1];
+                char *buf = new char[len];
                 SQInteger res = sqstd_fread(buf, len, 1, file);
-                //assert(res == len);
-                buf[len] = 0;
+                if (res < 1)
+                    return sq_throwerror(v,_SC("error reading file"));
 
                 succeeded = SQ_SUCCEEDED(sq_compilepeg(v, buf, len, filename, printerror));
                 delete[] buf;
