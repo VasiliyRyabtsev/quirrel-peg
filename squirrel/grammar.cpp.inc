@@ -2,12 +2,15 @@ static const char *grammar = R"(
     Statements <- ( Statement (';' / EOL)* )*
     Statement <- (
         ReturnStatement / IfStmt / ForStmt / ForeachStmt / BlockStmt /
+        BreakStmt / ContinueStmt  /
         'local' LocalDeclStatement / VarModifyStmt / SlotModifyStmt /
         Expression
     )
 
     ReturnStatement <- 'return' Expression
     BlockStmt <- '{' Statements '}'
+    BreakStmt <- 'break'
+    ContinueStmt <- 'continue'
     LocalDeclStatement <- 'function' LocalFuncDeclStmt / LocalVarsDeclStmt
     LocalVarDeclStmt <- IDENTIFIER '=' Expression / IDENTIFIER
     LocalVarsDeclStmt <- LocalVarDeclStmt (',' LocalVarDeclStmt)*

@@ -761,6 +761,33 @@ public:
             _fs->PopTarget();
             END_SCOPE();
         }
+        else if (ast.name == "BreakStmt") {
+            if(_fs->_breaktargets.size() <= 0) {
+                //Error(_SC("'break' has to be in a loop block"));
+                printf(_SC("'break' has to be in a loop block\n"));
+                return false;
+            }
+            if(_fs->_breaktargets.top() > 0){
+                _fs->AddInstruction(_OP_POPTRAP, _fs->_breaktargets.top(), 0);
+            }
+            RESOLVE_OUTERS();
+            _fs->AddInstruction(_OP_JMP, 0, -1234);
+            _fs->_unresolvedbreaks.push_back(_fs->GetCurrentPos());
+        }
+        else if (ast.name == "ContinueStmt") {
+            if(_fs->_continuetargets.size() <= 0) {
+                //Error(_SC("'continue' has to be in a loop block"));
+                printf(_SC("'continue' has to be in a loop block\n"));
+                return false;
+            }
+            if(_fs->_continuetargets.top() > 0) {
+                _fs->AddInstruction(_OP_POPTRAP, _fs->_continuetargets.top(), 0);
+            }
+            RESOLVE_OUTERS();
+            _fs->AddInstruction(_OP_JMP, 0, -1234);
+            _fs->_unresolvedcontinues.push_back(_fs->GetCurrentPos());
+
+        }
         else {
             if (!processChildren(ast, depth))
                 return false;
