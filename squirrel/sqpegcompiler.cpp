@@ -246,10 +246,13 @@ public:
             processNode(*node.get());
     }
 
-    void Statement(const Ast &ast) {
+    void Statement(const Ast &ast, bool closeframe=true) {
         assert(ast.nodes.size()==1);
         _fs->AddLineInfos(ast.line, _lineinfo);
-        processChildren(ast);
+        if (ast.nodes[0]->name == "BlockStmt")
+            BlockStatement(*ast.nodes[0].get(), closeframe);
+        else
+            processNode(ast.nodes[0]);
         if (ast.nodes[0]->name == "Expression") {
             _fs->DiscardTarget();
             //_fs->PopTarget();
@@ -325,17 +328,15 @@ public:
     }
 
 
-    void BlockStatement(const Ast &ast) {
+    void BlockStatement(const Ast &ast, bool closeframe=true) {
         BEGIN_SCOPE();
         processChildren(ast);
-        END_SCOPE_NO_CLOSE();
-        //END_SCOPE();
-        // if(closeframe) {
-        //     END_SCOPE();
-        // }
-        // else {
-        //     END_SCOPE_NO_CLOSE();
-        // }
+        if(closeframe) {
+            END_SCOPE();
+        }
+        else {
+            END_SCOPE_NO_CLOSE();
+        }
     }
 
 
@@ -413,7 +414,8 @@ public:
         _fs = funcstate;
 
         // body
-        processNode(*ast.nodes[2].get());
+        assert(ast.nodes[2]->name == "Statement");
+        Statement(*ast.nodes[2].get(), false);
 
         //funcstate->AddLineInfos(_lex._prevtoken == _SC('\n')?_lex._lasttokenline:_lex._currentline, _lineinfo, true);
         funcstate->AddInstruction(_OP_RETURN, -1);
