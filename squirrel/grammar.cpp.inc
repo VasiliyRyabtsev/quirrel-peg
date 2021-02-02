@@ -2,7 +2,7 @@ static const char *grammar = R"(
     Statements <- ( Statement (';' / EOL)* )*
     Statement <- (
         ReturnStatement / IfStmt / ForStmt / ForeachStmt / BlockStmt /
-        BreakStmt / ContinueStmt  /
+        BreakStmt / ContinueStmt / ThrowStmt / TryCatchStmt /
         'local' LocalDeclStatement / VarModifyStmt / SlotModifyStmt /
         Expression
     )
@@ -58,6 +58,9 @@ static const char *grammar = R"(
     ForAction   <- Expression? (',' Expression)*
 
     ForeachStmt <- 'foreach' '(' IDENTIFIER (',' IDENTIFIER)? 'in' Expression ')' Statement
+
+    ThrowStmt   <- 'throw' Expression
+    TryCatchStmt <- 'try' Statement 'catch' '(' IDENTIFIER ')' Statement
 
     INTEGER     <- < [-+]? [0-9]+ >
     FLOAT       <- < [-+]?[0-9]* '.'? [0-9]+([eE][-+]?[0-9]+)? / ['-+']?[0-9]+ '.' [0-9]* >

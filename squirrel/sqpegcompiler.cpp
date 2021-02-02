@@ -767,6 +767,48 @@ public:
         _fs->_unresolvedcontinues.push_back(_fs->GetCurrentPos());
     }
 
+    void ThrowStmt(const Ast &ast) {
+        processChildren(ast);
+        _fs->AddInstruction(_OP_THROW, _fs->PopTarget());
+    }
+
+    void TryCatchStmt(const Ast &ast) {
+        _fs->AddInstruction(_OP_PUSHTRAP,0,0);
+        _fs->_traps++;
+        if(_fs->_breaktargets.size()) _fs->_breaktargets.top()++;
+        if(_fs->_continuetargets.size()) _fs->_continuetargets.top()++;
+        SQInteger trappos = _fs->GetCurrentPos();
+
+        {
+            BEGIN_SCOPE();
+            processNode(ast.nodes[0]);
+            END_SCOPE();
+        }
+
+        _fs->_traps--;
+        _fs->AddInstruction(_OP_POPTRAP, 1, 0);
+        if(_fs->_breaktargets.size()) _fs->_breaktargets.top()--;
+        if(_fs->_continuetargets.size()) _fs->_continuetargets.top()--;
+        _fs->AddInstruction(_OP_JMP, 0, 0);
+        SQInteger jmppos = _fs->GetCurrentPos();
+        _fs->SetInstructionParam(trappos, 1, (_fs->GetCurrentPos() - trappos));
+
+        SQObject exid = makeString(ast.nodes[1]->token);
+
+        {
+            BEGIN_SCOPE();
+            SQInteger ex_target = _fs->PushLocalVariable(exid);
+            _fs->SetInstructionParam(trappos, 0, ex_target);
+            processNode(ast.nodes[2]);
+            _fs->SetInstructionParams(jmppos, 0, (_fs->GetCurrentPos() - jmppos), 0);
+            END_SCOPE();
+        }
+    }
+
+    template <typename T> void processNode(const std::shared_ptr<T> &node)
+    {
+        processNode(*node.get());
+    }
 
     void processNode(const Ast &ast)
     {
@@ -816,6 +858,10 @@ public:
             BreakStmt(ast);
         else if (ast.name == "ContinueStmt")
             ContinueStmt(ast);
+        else if (ast.name == "ThrowStmt")
+            ThrowStmt(ast);
+        else if (ast.name == "TryCatchStmt")
+            TryCatchStmt(ast);
         else
             processChildren(ast);
     }
