@@ -247,8 +247,14 @@ public:
     }
 
     void Statement(const Ast &ast) {
+        assert(ast.nodes.size()==1);
         _fs->AddLineInfos(ast.line, _lineinfo);
         processChildren(ast);
+        if (ast.nodes[0]->name == "Expression") {
+            _fs->DiscardTarget();
+            //_fs->PopTarget();
+        }
+
         _fs->SnoozeOpt();
     }
 
