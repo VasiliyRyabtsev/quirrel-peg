@@ -87,18 +87,19 @@ public:
         _compilererror[0] = _SC('\0');
     }
 
+
     static void ThrowError(void *ud, const SQChar *s) {
         SQPegCompiler *c = (SQPegCompiler *)ud;
         c->Error(s);
     }
 
-    void Error(const SQChar *s, ...)
-    {
+
+    void Error(const SQChar *s, ...) {
         va_list vl;
         va_start(vl, s);
         scvsprintf(_compilererror, MAX_COMPILER_ERROR_LEN, s, vl);
         va_end(vl);
-        //longjmp(_errorjmp,1);
+        longjmp(_errorjmp,1);
     }
 
 
@@ -165,23 +166,16 @@ public:
         return false;
     }
 
-    bool CheckDuplicateLocalIdentifier(const SQObject &name, const SQChar *desc, bool ignore_global_consts)
+    void CheckDuplicateLocalIdentifier(const SQObject &name, const SQChar *desc, bool ignore_global_consts)
     {
-        if (_fs->GetLocalVariable(name) >= 0) {
-            printf(_SC("%s name '%s' conflicts with existing local variable\n"), desc, _string(name)->_val);
-            return false;
-        }
-        if (_stringval(name) == _stringval(_fs->_name)) {
-            printf(_SC("%s name '%s' conflicts with function name\n"), desc, _stringval(name));
-            return false;
-        }
+        if (_fs->GetLocalVariable(name) >= 0)
+            Error(_SC("%s name '%s' conflicts with existing local variable"), desc, _string(name)->_val);
+        if (_stringval(name) == _stringval(_fs->_name))
+            Error(_SC("%s name '%s' conflicts with function name"), desc, _stringval(name));
 
         SQObject constant;
-        if (ignore_global_consts ? IsLocalConstant(name, constant) : IsConstant(name, constant)) {
-            printf(_SC("%s name '%s' conflicts with existing constant/enum\n"), desc, _stringval(name));
-            return false;
-        }
-        return true;
+        if (ignore_global_consts ? IsLocalConstant(name, constant) : IsConstant(name, constant))
+            Error(_SC("%s name '%s' conflicts with existing constant/enum"), desc, _stringval(name));
     }
 
     void MoveIfCurrentTargetIsLocal() {
@@ -247,22 +241,19 @@ public:
         return res;
     }
 
-    bool processChildren(const Ast &ast) {
+    void processChildren(const Ast &ast) {
         for (const auto &node : ast.nodes)
-            if (!processNode(*node.get()))
-                return false;
-        return true;
+            processNode(*node.get());
     }
 
-    bool Statement(const Ast &ast) {
+    void Statement(const Ast &ast) {
         _fs->AddLineInfos(ast.line, _lineinfo);
-        if (!processChildren(ast))
-            return false;
+        processChildren(ast);
         _fs->SnoozeOpt();
-        return true;
     }
 
-    bool FactorPush(const Ast &ast) {
+
+    void FactorPush(const Ast &ast) {
         if (ast.name == "INTEGER") {
             SQInteger target = _fs->PushTarget();
             SQInteger value = ast.token_to_number<SQInteger>();
@@ -292,14 +283,12 @@ public:
         else if (ast.name == "LOADROOT") {
             _fs->AddInstruction(_OP_LOADROOT, _fs->PushTarget());
         }
-        else {
-            assert(false);
-            return false;
-        }
-        return true;
+        else
+            Error(_SC("Unexpected factor primitive '%s' "), ast.name);
     }
 
-    bool Factor(const Ast &ast) {
+
+    void Factor(const Ast &ast) {
         const auto& tp = ast.nodes[0]->name;
         if (tp == "IDENTIFIER") {
             SQObjectPtr id = makeString(ast.nodes[0]->token);
@@ -311,33 +300,28 @@ public:
                 _fs->AddInstruction(_OP_GETOUTER, _fs->PushTarget(), pos);
             else if (sq_isstring(_fs->_name) && scstrcmp(_stringval(_fs->_name), _stringval(id))==0)
                 _fs->AddInstruction(_OP_LOADCALLEE, _fs->PushTarget());
-            else {
-                printf("Unknown local variable '%s'\n", _stringval(id));
-                return false;
-            }
+            else
+                Error(_SC("Unknown local variable '%s'"), _stringval(id));
         }
-        if (!processChildren(ast))
-            return false;
-        return true;
+        processChildren(ast);
     }
 
-    bool ReturnStatement(const Ast &ast) {
+
+    void ReturnStatement(const Ast &ast) {
         SQInteger retexp = _fs->GetCurrentPos()+1;
 
-        if (!processChildren(ast))
-            return false;
+        processChildren(ast);
 
         if (_fs->_traps > 0)
             _fs->AddInstruction(_OP_POPTRAP, _fs->_traps, 0);
         _fs->_returnexp = retexp;
         _fs->AddInstruction(_OP_RETURN, 1, _fs->PopTarget(),_fs->GetStackSize());
-        return true;
     }
 
-    bool BlockStatement(const Ast &ast) {
+
+    void BlockStatement(const Ast &ast) {
         BEGIN_SCOPE();
-        if (!processChildren(ast))
-            return false;
+        processChildren(ast);
         END_SCOPE_NO_CLOSE();
         //END_SCOPE();
         // if(closeframe) {
@@ -346,22 +330,21 @@ public:
         // else {
         //     END_SCOPE_NO_CLOSE();
         // }
-        return true;
     }
 
-    bool BinaryOpExpr(const Ast &ast) {
+
+    void BinaryOpExpr(const Ast &ast) {
         assert(ast.nodes.size() == 3);
-        if (!processChildren(ast))
-            return false;
+
+        processChildren(ast);
+
         SQInteger op1 = _fs->PopTarget();
         SQInteger op2 = _fs->PopTarget();
         SQInteger op3 = 0;
 
         SQOpcode op;
-        if (ast.nodes[1]->name != "BINARY_OP") {
-            printf("BINARY_OP expected\n");
-            return false;
-        }
+        if (ast.nodes[1]->name != "BINARY_OP")
+            Error(_SC("BINARY_OP expected"));
 
         auto opStr = ast.nodes[1]->token;
         if (opStr == "+")           op = _OP_ADD;
@@ -376,23 +359,19 @@ public:
         else if (opStr == ">=")     {op = _OP_CMP; op3 = CMP_GE;}
         else if (opStr == "<=")     {op = _OP_CMP; op3 = CMP_LE;}
         else if (opStr == "<=>")    {op = _OP_CMP; op3 = CMP_3W;}
-        else {
-            printf("Unknown operator '%s'\n", std::string(opStr).c_str());
-            return false;
-        }
+        else
+            Error(_SC("Unknown operator '%s'"), std::string(opStr).c_str());
 
         _fs->AddInstruction(op, _fs->PushTarget(), op1, op2, op3);
-        return true;
     }
 
-    bool LocalVarDeclStmt(const Ast &ast) {
+
+    void LocalVarDeclStmt(const Ast &ast) {
         SQObjectPtr varname = makeString(ast.nodes[0]->token);
-        if (!CheckDuplicateLocalIdentifier(varname, _SC("Local variable"), false))
-            return false;
+        CheckDuplicateLocalIdentifier(varname, _SC("Local variable"), false);
 
         if (ast.nodes.size() > 1) {
-            if (!processChildren(ast))
-                return false;
+            processChildren(ast);
             SQInteger src = _fs->PopTarget();
             SQInteger dest = _fs->PushTarget();
             if (dest != src)
@@ -403,16 +382,15 @@ public:
         }
         _fs->PopTarget();
         _fs->PushLocalVariable(varname);
-        return true;
     }
 
-    bool LocalFuncDeclStmt(const Ast &ast) {
+
+    void LocalFuncDeclStmt(const Ast &ast) {
         assert(ast.nodes[0]->name == "IDENTIFIER");
         assert(ast.nodes[1]->name == "FuncParams");
         assert(ast.nodes[2]->name == "Statement");
         SQObjectPtr varname = makeString(ast.nodes[0]->token);
-        if (!CheckDuplicateLocalIdentifier(varname, _SC("Function"), false))
-            return false;
+        CheckDuplicateLocalIdentifier(varname, _SC("Function"), false);
 
         SQFuncState *funcstate = _fs->PushChildState(_ss(_vm));
         funcstate->_name = varname;
@@ -429,8 +407,7 @@ public:
         _fs = funcstate;
 
         // body
-        if (!processNode(*ast.nodes[2].get()))
-            return false;
+        processNode(*ast.nodes[2].get());
 
         //funcstate->AddLineInfos(_lex._prevtoken == _SC('\n')?_lex._lasttokenline:_lex._currentline, _lineinfo, true);
         funcstate->AddInstruction(_OP_RETURN, -1);
@@ -447,18 +424,15 @@ public:
         _fs->AddInstruction(_OP_CLOSURE, _fs->PushTarget(), _fs->_functions.size() - 1, 0);
         _fs->PopTarget();
         _fs->PushLocalVariable(varname);
-        return true;
     }
 
-    bool PrefixedExpr(const Ast &ast) {
+
+    void PrefixedExpr(const Ast &ast) {
         assert(ast.nodes.size() >= 1);
         assert(ast.nodes[0]->name == "Factor" || ast.nodes[0]->name == "LOADROOT");
         size_t nNodes = ast.nodes.size();
 
-        if (!processNode(*ast.nodes[0].get())) {
-            printf("PrefixedExpr error at line %d\n", int(ast.line));
-            return false;
-        }
+        processNode(*ast.nodes[0].get());
 
         bool needPrepCall = false;
         for (size_t i=1; i<nNodes; ++i) {
@@ -468,8 +442,7 @@ public:
             if (node.name == "SlotGet") {
                 assert(node.nodes.size() == 1);
 
-                if (!processNode(*node.nodes[0].get()))
-                    return false;
+                processNode(*node.nodes[0].get());
 
                 SQInteger flags = 0;
 
@@ -524,8 +497,7 @@ public:
 
                     SQInteger nargs = 1;//this
                     for (size_t i=0; i<args->nodes.size(); ++i) {
-                        if (!processNode(*args->nodes[i].get()))
-                            return false;
+                        processNode(*args->nodes[i].get());
                         MoveIfCurrentTargetIsLocal();
                         nargs++;
                     }
@@ -540,11 +512,10 @@ public:
                 }
             }
         }
-        return true;
     }
 
 
-    bool VarModifyStmt(const Ast &ast) {
+    void VarModifyStmt(const Ast &ast) {
         assert(ast.nodes.size() == 3);
 
         SQObjectPtr id = makeString(ast.nodes[0]->token);
@@ -555,18 +526,13 @@ public:
         } else if ((pos = _fs->GetOuterVariable(id)) != -1) {
             _fs->AddInstruction(_OP_GETOUTER, _fs->PushTarget(), pos);
             isOuter = true;
-        } else {
-            printf("Unknown local variable '%s'\n", _stringval(id));
-            return false;
-        }
+        } else
+            Error(_SC("Unknown local variable '%s'"), _stringval(id));
 
-        if (ast.nodes[1]->token != "=") {
-            printf("Only '=' is supported for now\n");
-            return false;
-        }
+        if (ast.nodes[1]->token != "=")
+            Error(_SC("Only '=' is supported for now"));
 
-        if (!processNode(*ast.nodes[2].get()))
-            return false;
+        processNode(*ast.nodes[2].get());
 
         if (!isOuter) {
             SQInteger src = _fs->PopTarget();
@@ -577,26 +543,24 @@ public:
             SQInteger dst = _fs->PushTarget();
             _fs->AddInstruction(_OP_SETOUTER, dst, pos, src);
         }
-        return true;
     }
 
 
-    bool SlotModifyStmt(const Ast &ast) {
+    void SlotModifyStmt(const Ast &ast) {
         assert(ast.nodes.size() == 4);
         assert(ast.nodes[2]->token == "=" || ast.nodes[2]->token == "<-");
-        if (!processChildren(ast))
-            return false;
+
+        processChildren(ast);
 
         SQInteger val = _fs->PopTarget();
         SQInteger key = _fs->PopTarget();
         SQInteger src = _fs->PopTarget();
         SQOpcode  op = ast.nodes[2]->token == "=" ? _OP_SET : _OP_NEWSLOT;
         _fs->AddInstruction(op, _fs->PushTarget(), src, key, val);
-        return true;
     }
 
 
-    bool ArrayInit(const Ast &ast) {
+    void ArrayInit(const Ast &ast) {
         assert(ast.nodes.size() == 1);
         assert(ast.nodes[0]->name == "ArgValues");
         const auto &args = ast.nodes[0];
@@ -604,16 +568,16 @@ public:
         SQInteger len = args->nodes.size();
         _fs->AddInstruction(_OP_NEWOBJ, _fs->PushTarget(), len, 0, NOT_ARRAY);
         for (SQInteger key=0; key<len; ++key) {
-            if (!processNode(*args->nodes[key].get()))
-                return false;
+            processNode(*args->nodes[key].get());
+
             SQInteger val = _fs->PopTarget();
             SQInteger array = _fs->TopTarget();
             _fs->AddInstruction(_OP_APPENDARRAY, array, val, AAT_STACK);
         }
-        return true;
     }
 
-    bool TableInit(const Ast &ast) {
+
+    void TableInit(const Ast &ast) {
         SQInteger len = ast.nodes.size();
         SQInteger tblPos = _fs->PushTarget();
         _fs->AddInstruction(_OP_NEWOBJ, tblPos, len, 0, NOT_TABLE);
@@ -629,14 +593,11 @@ public:
                         _fs->PushTarget(pos);
                     else if ((pos = _fs->GetOuterVariable(key)) != -1)
                         _fs->AddInstruction(_OP_GETOUTER, _fs->PushTarget(), pos);
-                    else {
-                        printf("Local variable '%s' not found\n", _stringval(key));
-                        return false;
-                    }
+                    else
+                        Error(_SC("Local variable '%s' not found"), _stringval(key));
                 }
             }
-            if (!processNode(*item.get()))
-                return false;
+            processNode(*item.get());
 
             SQInteger val = _fs->PopTarget();
             SQInteger key = _fs->PopTarget();
@@ -644,36 +605,32 @@ public:
             SQInteger table = tblPos ; // _fs->TopTarget(); //<<BECAUSE OF THIS NO COMMON EMIT FUNC IS POSSIBLE
             _fs->AddInstruction(_OP_NEWSLOT, 0xFF, table, key, val);
         }
-        return true;
     }
 
 
-    bool IfStmt(const Ast &ast) {
+    void IfStmt(const Ast &ast) {
         assert(ast.nodes.size() == 2 || ast.nodes.size() == 3);
         assert(ast.nodes[0]->name == "Expression");
-        if (!processNode(*ast.nodes[0].get()))
-            return false;
+
+        processNode(*ast.nodes[0].get());
 
         _fs->AddInstruction(_OP_JZ, _fs->PopTarget());
         SQInteger jnepos = _fs->GetCurrentPos();
-        if (!processNode(*ast.nodes[1].get()))
-            return false;
+        processNode(*ast.nodes[1].get());
         SQInteger endifblock = _fs->GetCurrentPos();
 
         bool hasElse = ast.nodes.size() == 3;
         if (hasElse) {
             _fs->AddInstruction(_OP_JMP);
             SQInteger jmppos = _fs->GetCurrentPos();
-            if (!processNode(*ast.nodes[2].get()))
-                return false;
+            processNode(*ast.nodes[2].get());
             _fs->SetInstructionParam(jmppos, 1, _fs->GetCurrentPos() - jmppos);
         }
         _fs->SetInstructionParam(jnepos, 1, endifblock - jnepos + (hasElse?1:0));
-        return true;
     }
 
 
-    bool ForStmt(const Ast &ast) {
+    void ForStmt(const Ast &ast) {
         assert(ast.nodes.size()==3 || ast.nodes.size()==4);
         const auto &forInitNode = *ast.nodes[0].get();
         const auto &forCondNode = *ast.nodes[1].get();
@@ -681,16 +638,14 @@ public:
 
         BEGIN_SCOPE();
 
-        if (!processNode(forInitNode))
-            return false;
+        processNode(forInitNode);
 
         _fs->SnoozeOpt();
         SQInteger jmppos = _fs->GetCurrentPos();
         SQInteger jzpos = -1;
 
         if (!forCondNode.nodes.empty()) {
-            if (!processNode(forCondNode))
-                return false;
+            processNode(forCondNode);
             _fs->AddInstruction(_OP_JZ, _fs->PopTarget());
             jzpos = _fs->GetCurrentPos();
         }
@@ -699,8 +654,7 @@ public:
         SQInteger expstart = _fs->GetCurrentPos() + 1;
         for (const auto &node : forActionNode.nodes) {
             assert(node->name == "Expression");
-            if (!processNode(*node.get()))
-                return false;
+            processNode(*node.get());
             _fs->PopTarget();
         }
 
@@ -718,8 +672,7 @@ public:
         BEGIN_BREAKBLE_BLOCK()
 
         if (ast.nodes.size() == 4) {
-            if (!processNode(*ast.nodes[3].get()))
-                return false;
+            processNode(*ast.nodes[3].get());
         }
 
         SQInteger continuetrg = _fs->GetCurrentPos();
@@ -734,18 +687,16 @@ public:
         END_BREAKBLE_BLOCK(continuetrg);
 
         END_SCOPE();
-        return true;
     }
 
 
-    bool ForeachStmt(const Ast &ast) {
+    void ForeachStmt(const Ast &ast) {
         //     ForeachStmt <- 'foreach' '(' IDENTIFIER (',' IDENTIFIER) 'in' Expression ')' Statement
         assert(ast.nodes.size() == 3 || ast.nodes.size() == 4);
 
         SQObject idxname, valname;
         valname = makeString(ast.nodes[0]->token);
-        if (!CheckDuplicateLocalIdentifier(valname, _SC("Iterator"), false))
-            return false;
+        CheckDuplicateLocalIdentifier(valname, _SC("Iterator"), false);
 
         int containerIdx = 1, actionStmtIdx = 2;
         if (ast.nodes.size() == 4) {
@@ -762,8 +713,7 @@ public:
         //save the stack size
         BEGIN_SCOPE();
         //put the table in the stack(evaluate the table expression)
-        if (!processNode(*ast.nodes[containerIdx].get()))
-            return false;
+        processNode(*ast.nodes[containerIdx].get());
 
         SQInteger container = _fs->TopTarget();
         //push the index local var
@@ -782,8 +732,7 @@ public:
         //generate the statement code
         BEGIN_BREAKBLE_BLOCK()
 
-        if (!processNode(*ast.nodes[actionStmtIdx].get()))
-            return false;
+        processNode(*ast.nodes[actionStmtIdx].get());
 
         _fs->AddInstruction(_OP_JMP, 0, jmppos - _fs->GetCurrentPos() - 1);
         _fs->SetInstructionParam(foreachpos, 1, _fs->GetCurrentPos() - foreachpos);
@@ -792,100 +741,84 @@ public:
         //restore the local variable stack(remove index,val and ref idx)
         _fs->PopTarget();
         END_SCOPE();
-
-        return true;
     }
 
 
-    bool BreakStmt(const Ast &ast) {
-        if(_fs->_breaktargets.size() <= 0) {
-            //Error(_SC("'break' has to be in a loop block"));
-            printf(_SC("'break' has to be in a loop block\n"));
-            return false;
-        }
+    void BreakStmt(const Ast &ast) {
+        if(_fs->_breaktargets.size() <= 0)
+            Error(_SC("'break' has to be in a loop block"));
         if(_fs->_breaktargets.top() > 0){
             _fs->AddInstruction(_OP_POPTRAP, _fs->_breaktargets.top(), 0);
         }
         RESOLVE_OUTERS();
         _fs->AddInstruction(_OP_JMP, 0, -1234);
         _fs->_unresolvedbreaks.push_back(_fs->GetCurrentPos());
-        return true;
     }
 
 
-    bool ContinueStmt(const Ast &ast) {
-        if(_fs->_continuetargets.size() <= 0) {
-            //Error(_SC("'continue' has to be in a loop block"));
-            printf(_SC("'continue' has to be in a loop block\n"));
-            return false;
-        }
+    void ContinueStmt(const Ast &ast) {
+        if(_fs->_continuetargets.size() <= 0)
+            Error(_SC("'continue' has to be in a loop block"));
         if(_fs->_continuetargets.top() > 0) {
             _fs->AddInstruction(_OP_POPTRAP, _fs->_continuetargets.top(), 0);
         }
         RESOLVE_OUTERS();
         _fs->AddInstruction(_OP_JMP, 0, -1234);
         _fs->_unresolvedcontinues.push_back(_fs->GetCurrentPos());
-        return true;
     }
 
 
-    bool processNode(const Ast &ast)
+    void processNode(const Ast &ast)
     {
         //printf("%*cname = %s | token = %s\n", depth*2, ' ',
         //    ast.name.c_str(), ast.is_token ? std::string(ast.token).c_str() : "N/A");
 
         if (ast.name == "Statement")
-            return Statement(ast);
+            Statement(ast);
         else if (ast.name == "INTEGER" || ast.name == "FLOAT" || ast.name == "BOOLEAN" || ast.name == "NULL" || ast.name == "STRING_LITERAL")
-            return FactorPush(ast);
+            FactorPush(ast);
         else if (ast.name == "LOADROOT") {
             _fs->AddInstruction(_OP_LOADROOT, _fs->PushTarget());
         }
         else if (ast.name == "ReturnStatement")
-            return ReturnStatement(ast);
+            ReturnStatement(ast);
         else if (ast.name == "BlockStmt")
-            return BlockStatement(ast);
+            BlockStatement(ast);
         else if (ast.name == "BinaryOpExpr")
-            return BinaryOpExpr(ast);
+            BinaryOpExpr(ast);
         else if (ast.name == "LocalVarDeclStmt")
-            return LocalVarDeclStmt(ast);
+            LocalVarDeclStmt(ast);
         else if (ast.name == "Factor")
-            return Factor(ast);
+            Factor(ast);
         else if (ast.name == "LocalFuncDeclStmt")
-            return LocalFuncDeclStmt(ast);
+            LocalFuncDeclStmt(ast);
         else if (ast.name == "PrefixedExpr")
-            return PrefixedExpr(ast);
-        else if (ast.name == "SlotGet" || ast.name == "SlotNamedGet" || ast.name == "FunctionCall") {
-            printf("'%s' should be processed from PrefixedExpr node\n", ast.name.c_str());
-            return false;
-        }
+            PrefixedExpr(ast);
+        else if (ast.name == "SlotGet" || ast.name == "SlotNamedGet" || ast.name == "FunctionCall")
+            Error(_SC("'%s' should be processed from PrefixedExpr node"), ast.name.c_str());
         else if (ast.name == "VarModifyStmt")
-            return VarModifyStmt(ast);
+            VarModifyStmt(ast);
         else if (ast.name == "SlotModifyStmt")
-            return SlotModifyStmt(ast);
+            SlotModifyStmt(ast);
         else if (ast.name == "ArrayInit")
-            return ArrayInit(ast);
+            ArrayInit(ast);
         else if (ast.name == "TableInit")
-            return TableInit(ast);
+            TableInit(ast);
         else if (ast.name == "IfStmt")
-            return IfStmt(ast);
+            IfStmt(ast);
         else if (ast.name == "ForStmt")
-            return ForStmt(ast);
+            ForStmt(ast);
         else if (ast.name == "ForeachStmt")
-            return ForeachStmt(ast);
+            ForeachStmt(ast);
         else if (ast.name == "BreakStmt")
-            return BreakStmt(ast);
+            BreakStmt(ast);
         else if (ast.name == "ContinueStmt")
-            return ContinueStmt(ast);
-        else {
-            if (!processChildren(ast))
-                return false;
-        }
-
-        return true;
+            ContinueStmt(ast);
+        else
+            processChildren(ast);
     }
 
-    bool processAst(const Ast &ast, SQObjectPtr &o)
+    void processAst(const Ast &ast, SQObjectPtr &o)
     {
         _scopedconsts.push_back();
         SQFuncState funcstate(_ss(_vm), NULL,ThrowError,this);
@@ -898,8 +831,7 @@ public:
         _fs->_sourcename_ptr = _sourcename_ptr;
         SQInteger stacksize = _fs->GetStackSize();
 
-        if (!processNode(ast))
-            return false;
+        processNode(ast);
 
         _fs->SetStackSize(stacksize);
         _fs->AddLineInfos(ast.line, _lineinfo, true); //== TODO: check if line is begin or end
@@ -912,7 +844,6 @@ public:
 #endif
 
         assert(_scopedconsts.size()==1);
-        return true;
     }
 
     bool Compile(const SQChar *src, SQInteger /*src_len*/, SQObjectPtr &o)
@@ -921,30 +852,39 @@ public:
 
         parser parser(grammar);
 
-        parser.log = [](size_t line, size_t col, const std::string& msg) {
-            printf("Parse error at %d:%d: %s", int(line), int(col), msg.c_str());
-        };
+        if(setjmp(_errorjmp) == 0) {
 
-        parser.enable_ast();
+            parser.log = [&](size_t line, size_t col, const std::string& msg) {
+                Error(_SC("Parse error at %d:%d: %s"), int(line), int(col), msg.c_str());
+            };
 
-        auto expr = src;
-        std::shared_ptr<Ast> ast;
-        if (!parser.parse(expr, ast)) {
-            std::cout << "syntax error..." << std::endl;
+            parser.enable_ast();
+
+            auto expr = src;
+            std::shared_ptr<Ast> ast;
+            if (!parser.parse(expr, ast)) {
+                // std::cout << "syntax error..." << std::endl;
+                // return false;
+            }
+
+            //std::shared_ptr<Ast> astOpt = AstOptimizer(true).optimize(ast);
+            std::shared_ptr<Ast> astOpt = ast;
+            std::cout << ast_to_s(astOpt);
+            //std::cout << expr << " = " << eval(*ast) << std::endl;
+
+            processAst(*astOpt.get(), o);
+        } else {
+            if(_raiseerror && _ss(_vm)->_compilererrorhandler) {
+                _ss(_vm)->_compilererrorhandler(_vm, _compilererror, sq_type(_sourcename) == OT_STRING?_stringval(_sourcename):_SC("unknown"),
+                    /*_lex._currentline, _lex._currentcolumn*/-1, -1);
+            }
+            _vm->_lasterror = SQString::Create(_ss(_vm), _compilererror, -1);
             return false;
         }
-
-        //std::shared_ptr<Ast> astOpt = AstOptimizer(true).optimize(ast);
-        std::shared_ptr<Ast> astOpt = ast;
-        std::cout << ast_to_s(astOpt);
-        //std::cout << expr << " = " << eval(*ast) << std::endl;
-
-        return processAst(*astOpt.get(), o);
+        return true;
     }
 
 private:
-    //std::shared_ptr<Ast> ast;
-
     SQVM *_vm;
     SQFuncState *_fs;
     SQObjectPtr _sourcename;
@@ -954,6 +894,7 @@ private:
     SQScope _scope;
     SQChar _compilererror[MAX_COMPILER_ERROR_LEN];
     SQObjectPtrVec _scopedconsts;
+    jmp_buf _errorjmp;
 };
 
 
