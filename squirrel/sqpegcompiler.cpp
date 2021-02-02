@@ -772,6 +772,8 @@ public:
     {
         //printf("%*cname = %s | token = %s\n", depth*2, ' ',
         //    ast.name.c_str(), ast.is_token ? std::string(ast.token).c_str() : "N/A");
+        _src_line = int(ast.line);
+        _src_col = int(ast.column);
 
         if (ast.name == "Statement")
             Statement(ast);
@@ -876,7 +878,7 @@ public:
         } else {
             if(_raiseerror && _ss(_vm)->_compilererrorhandler) {
                 _ss(_vm)->_compilererrorhandler(_vm, _compilererror, sq_type(_sourcename) == OT_STRING?_stringval(_sourcename):_SC("unknown"),
-                    /*_lex._currentline, _lex._currentcolumn*/-1, -1);
+                    _src_line, _src_col);
             }
             _vm->_lasterror = SQString::Create(_ss(_vm), _compilererror, -1);
             return false;
@@ -895,6 +897,7 @@ private:
     SQChar _compilererror[MAX_COMPILER_ERROR_LEN];
     SQObjectPtrVec _scopedconsts;
     jmp_buf _errorjmp;
+    int _src_line = -1, _src_col = -1;
 };
 
 
