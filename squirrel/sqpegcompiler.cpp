@@ -249,7 +249,8 @@ public:
 
     bool processChildren(const Ast &ast, int depth) {
         for (const auto &node : ast.nodes)
-            processNode(*node.get(), depth + 1);
+            if (!processNode(*node.get(), depth + 1))
+                return false;
         return true;
     }
 
@@ -258,11 +259,13 @@ public:
         //printf("%*cname = %s | token = %s\n", depth*2, ' ',
         //    ast.name.c_str(), ast.is_token ? std::string(ast.token).c_str() : "N/A");
 
-        if (ast.name == "Statement")
+        if (ast.name == "Statement") {
             _fs->AddLineInfos(ast.line, _lineinfo);
-
-
-        if (ast.name == "INTEGER") {
+            if (!processChildren(ast, depth))
+                return false;
+            _fs->SnoozeOpt();
+        }
+        else if (ast.name == "INTEGER") {
             SQInteger target = _fs->PushTarget();
             SQInteger value = ast.token_to_number<SQInteger>();
             if (value <= INT_MAX && value > INT_MIN) //does it fit in 32 bits?
@@ -302,9 +305,23 @@ public:
             _fs->_returnexp = retexp;
             _fs->AddInstruction(_OP_RETURN, 1, _fs->PopTarget(),_fs->GetStackSize());
         }
+        else if (ast.name == "BlockStmt") {
+            BEGIN_SCOPE();
+            if (!processChildren(ast, depth))
+                return false;
+            END_SCOPE_NO_CLOSE();
+            //END_SCOPE();
+            // if(closeframe) {
+            //     END_SCOPE();
+            // }
+            // else {
+            //     END_SCOPE_NO_CLOSE();
+            // }
+        }
         else if (ast.name == "BinaryOpExpr") {
             assert(ast.nodes.size() == 3);
-            processChildren(ast, depth);
+            if (!processChildren(ast, depth))
+                return false;
             SQInteger op1 = _fs->PopTarget();
             SQInteger op2 = _fs->PopTarget();
             SQInteger op3 = 0;
@@ -377,7 +394,7 @@ public:
         else if (ast.name == "LocalFuncDeclStmt") {
             assert(ast.nodes[0]->name == "IDENTIFIER");
             assert(ast.nodes[1]->name == "FuncParams");
-            assert(ast.nodes[2]->name == "Statements");
+            assert(ast.nodes[2]->name == "Statement");
             SQObjectPtr varname = makeString(ast.nodes[0]->token);
             if (!CheckDuplicateLocalIdentifier(varname, _SC("Function"), false))
                 return false;
@@ -397,7 +414,8 @@ public:
             _fs = funcstate;
 
             // body
-            processNode(*ast.nodes[2].get(), depth+1);
+            if (!processNode(*ast.nodes[2].get(), depth+1))
+                return false;
 
             //funcstate->AddLineInfos(_lex._prevtoken == _SC('\n')?_lex._lasttokenline:_lex._currentline, _lineinfo, true);
             funcstate->AddInstruction(_OP_RETURN, -1);
@@ -433,7 +451,8 @@ public:
                 if (node.name == "SlotGet") {
                     assert(node.nodes.size() == 1);
 
-                    processNode(*node.nodes[0].get(), depth+1);
+                    if (!processNode(*node.nodes[0].get(), depth+1))
+                        return false;
 
                     SQInteger flags = 0;
 
@@ -488,7 +507,8 @@ public:
 
                         SQInteger nargs = 1;//this
                         for (size_t i=0; i<args->nodes.size(); ++i) {
-                            processNode(*args->nodes[i].get(), depth+2);
+                            if (!processNode(*args->nodes[i].get(), depth+2))
+                                return false;
                             MoveIfCurrentTargetIsLocal();
                             nargs++;
                         }
@@ -546,7 +566,8 @@ public:
         else if (ast.name == "SlotModifyStmt") {
             assert(ast.nodes.size() == 4);
             assert(ast.nodes[2]->token == "=" || ast.nodes[2]->token == "<-");
-            processChildren(ast, depth);
+            if (!processChildren(ast, depth))
+                return false;
 
             SQInteger val = _fs->PopTarget();
             SQInteger key = _fs->PopTarget();
@@ -562,7 +583,8 @@ public:
             SQInteger len = args->nodes.size();
             _fs->AddInstruction(_OP_NEWOBJ, _fs->PushTarget(), len, 0, NOT_ARRAY);
             for (SQInteger key=0; key<len; ++key) {
-                processNode(*args->nodes[key].get(), depth+1);
+                if (!processNode(*args->nodes[key].get(), depth+1))
+                    return false;
                 SQInteger val = _fs->PopTarget();
                 SQInteger array = _fs->TopTarget();
                 _fs->AddInstruction(_OP_APPENDARRAY, array, val, AAT_STACK);
@@ -590,7 +612,8 @@ public:
                         }
                     }
                 }
-                processNode(*item.get(), depth+1);
+                if (!processNode(*item.get(), depth+1))
+                    return false;
 
                 SQInteger val = _fs->PopTarget();
                 SQInteger key = _fs->PopTarget();
@@ -602,18 +625,21 @@ public:
         else if (ast.name == "IfStmt") {
             assert(ast.nodes.size() == 2 || ast.nodes.size() == 3);
             assert(ast.nodes[0]->name == "Expression");
-            processNode(*ast.nodes[0].get(), depth+1);
+            if (!processNode(*ast.nodes[0].get(), depth+1))
+                return false;
 
             _fs->AddInstruction(_OP_JZ, _fs->PopTarget());
             SQInteger jnepos = _fs->GetCurrentPos();
-            processNode(*ast.nodes[1].get(), depth+1);
+            if (!processNode(*ast.nodes[1].get(), depth+1))
+                return false;
             SQInteger endifblock = _fs->GetCurrentPos();
 
             bool hasElse = ast.nodes.size() == 3;
             if (hasElse) {
                 _fs->AddInstruction(_OP_JMP);
                 SQInteger jmppos = _fs->GetCurrentPos();
-                processNode(*ast.nodes[2].get(), depth+1);
+                if (!processNode(*ast.nodes[2].get(), depth+1))
+                    return false;
                 _fs->SetInstructionParam(jmppos, 1, _fs->GetCurrentPos() - jmppos);
             }
             _fs->SetInstructionParam(jnepos, 1, endifblock - jnepos + (hasElse?1:0));
@@ -663,7 +689,8 @@ public:
             BEGIN_BREAKBLE_BLOCK()
 
             if (ast.nodes.size() == 4) {
-                processNode(*ast.nodes[3].get(), depth+1);
+                if (!processNode(*ast.nodes[3].get(), depth+1))
+                    return false;
             }
 
             SQInteger continuetrg = _fs->GetCurrentPos();
@@ -756,7 +783,8 @@ public:
         _fs->_sourcename_ptr = _sourcename_ptr;
         SQInteger stacksize = _fs->GetStackSize();
 
-        processNode(ast, 0);
+        if (!processNode(ast, 0))
+            return false;
 
         _fs->SetStackSize(stacksize);
         _fs->AddLineInfos(ast.line, _lineinfo, true); //== TODO: check if line is begin or end

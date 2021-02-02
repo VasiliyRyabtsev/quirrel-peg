@@ -1,16 +1,17 @@
 static const char *grammar = R"(
     Statements <- ( Statement (';' / EOL)* )*
     Statement <- (
-        ReturnStatement / IfStmt / ForStmt / ForeachStmt /
+        ReturnStatement / IfStmt / ForStmt / ForeachStmt / BlockStmt /
         'local' LocalDeclStatement / VarModifyStmt / SlotModifyStmt /
-        Expression / '{' Statements '}'
+        Expression
     )
 
     ReturnStatement <- 'return' Expression
+    BlockStmt <- '{' Statements '}'
     LocalDeclStatement <- 'function' LocalFuncDeclStmt / LocalVarsDeclStmt
     LocalVarDeclStmt <- IDENTIFIER '=' Expression / IDENTIFIER
     LocalVarsDeclStmt <- LocalVarDeclStmt (',' LocalVarDeclStmt)*
-    LocalFuncDeclStmt <- IDENTIFIER '(' FuncParams ')' '{' Statements '}'
+    LocalFuncDeclStmt <- IDENTIFIER '(' FuncParams ')' Statement
     FuncParams <- IDENTIFIER? (',' IDENTIFIER)*
     Expression <- BinaryOpExpr / PrefixedExpr
     BinaryOpExpr <- PrefixedExpr (BINARY_OP PrefixedExpr)* {
