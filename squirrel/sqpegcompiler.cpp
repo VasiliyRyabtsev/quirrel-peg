@@ -247,25 +247,23 @@ public:
         return res;
     }
 
-    bool processChildren(const Ast &ast, int depth) {
+    bool processChildren(const Ast &ast) {
         for (const auto &node : ast.nodes)
-            if (!processNode(*node.get(), depth + 1))
+            if (!processNode(*node.get()))
                 return false;
         return true;
     }
 
-    bool processNode(const Ast &ast, int depth)
-    {
-        //printf("%*cname = %s | token = %s\n", depth*2, ' ',
-        //    ast.name.c_str(), ast.is_token ? std::string(ast.token).c_str() : "N/A");
+    bool Statement(const Ast &ast) {
+        _fs->AddLineInfos(ast.line, _lineinfo);
+        if (!processChildren(ast))
+            return false;
+        _fs->SnoozeOpt();
+        return true;
+    }
 
-        if (ast.name == "Statement") {
-            _fs->AddLineInfos(ast.line, _lineinfo);
-            if (!processChildren(ast, depth))
-                return false;
-            _fs->SnoozeOpt();
-        }
-        else if (ast.name == "INTEGER") {
+    bool FactorPush(const Ast &ast) {
+        if (ast.name == "INTEGER") {
             SQInteger target = _fs->PushTarget();
             SQInteger value = ast.token_to_number<SQInteger>();
             if (value <= INT_MAX && value > INT_MIN) //does it fit in 32 bits?
@@ -294,505 +292,595 @@ public:
         else if (ast.name == "LOADROOT") {
             _fs->AddInstruction(_OP_LOADROOT, _fs->PushTarget());
         }
-        else if (ast.name == "ReturnStatement") {
-            SQInteger retexp = _fs->GetCurrentPos()+1;
-
-            if (!processChildren(ast, depth))
-                return false;
-
-            if (_fs->_traps > 0)
-                _fs->AddInstruction(_OP_POPTRAP, _fs->_traps, 0);
-            _fs->_returnexp = retexp;
-            _fs->AddInstruction(_OP_RETURN, 1, _fs->PopTarget(),_fs->GetStackSize());
-        }
-        else if (ast.name == "BlockStmt") {
-            BEGIN_SCOPE();
-            if (!processChildren(ast, depth))
-                return false;
-            END_SCOPE_NO_CLOSE();
-            //END_SCOPE();
-            // if(closeframe) {
-            //     END_SCOPE();
-            // }
-            // else {
-            //     END_SCOPE_NO_CLOSE();
-            // }
-        }
-        else if (ast.name == "BinaryOpExpr") {
-            assert(ast.nodes.size() == 3);
-            if (!processChildren(ast, depth))
-                return false;
-            SQInteger op1 = _fs->PopTarget();
-            SQInteger op2 = _fs->PopTarget();
-            SQInteger op3 = 0;
-
-            SQOpcode op;
-            if (ast.nodes[1]->name != "BINARY_OP") {
-                printf("BINARY_OP expected\n");
-                return false;
-            }
-
-            auto opStr = ast.nodes[1]->token;
-            if (opStr == "+")           op = _OP_ADD;
-            else if (opStr == "-")      op = _OP_SUB;
-            else if (opStr == "*")      op = _OP_MUL;
-            else if (opStr == "/")      op = _OP_DIV;
-            else if (opStr == "%")      op = _OP_MOD;
-            else if (opStr == "==")     op = _OP_EQ;
-            else if (opStr == "!=")     op = _OP_NE;
-            else if (opStr == ">")      {op = _OP_CMP; op3 = CMP_G;}
-            else if (opStr == "<")      {op = _OP_CMP; op3 = CMP_L;}
-            else if (opStr == ">=")     {op = _OP_CMP; op3 = CMP_GE;}
-            else if (opStr == "<=")     {op = _OP_CMP; op3 = CMP_LE;}
-            else if (opStr == "<=>")    {op = _OP_CMP; op3 = CMP_3W;}
-            else {
-                printf("Unknown operator '%s'\n", std::string(opStr).c_str());
-                return false;
-            }
-
-            _fs->AddInstruction(op, _fs->PushTarget(), op1, op2, op3);
-        }
-        else if (ast.name == "LocalVarDeclStmt") {
-            SQObjectPtr varname = makeString(ast.nodes[0]->token);
-            if (!CheckDuplicateLocalIdentifier(varname, _SC("Local variable"), false))
-                return false;
-
-            if (ast.nodes.size() > 1) {
-                if (!processChildren(ast, depth))
-                    return false;
-                SQInteger src = _fs->PopTarget();
-                SQInteger dest = _fs->PushTarget();
-                if (dest != src)
-                    _fs->AddInstruction(_OP_MOVE, dest, src);
-            }
-            else {
-                _fs->AddInstruction(_OP_LOADNULLS, _fs->PushTarget(), 1);
-            }
-            _fs->PopTarget();
-            _fs->PushLocalVariable(varname);
-        }
-        else if (ast.name == "Factor") {
-            const auto& tp = ast.nodes[0]->name;
-            if (tp == "IDENTIFIER") {
-                SQObjectPtr id = makeString(ast.nodes[0]->token);
-
-                SQInteger pos;
-                if ((pos = _fs->GetLocalVariable(id)) != -1) // Handle a local variable (includes 'this')
-                    _fs->PushTarget(pos);
-                else if ((pos = _fs->GetOuterVariable(id)) != -1)
-                    _fs->AddInstruction(_OP_GETOUTER, _fs->PushTarget(), pos);
-                else if (sq_isstring(_fs->_name) && scstrcmp(_stringval(_fs->_name), _stringval(id))==0)
-                    _fs->AddInstruction(_OP_LOADCALLEE, _fs->PushTarget());
-                else {
-                    printf("Unknown local variable '%s'\n", _stringval(id));
-                    return false;
-                }
-            }
-            if (!processChildren(ast, depth))
-                return false;
-        }
-        else if (ast.name == "LocalFuncDeclStmt") {
-            assert(ast.nodes[0]->name == "IDENTIFIER");
-            assert(ast.nodes[1]->name == "FuncParams");
-            assert(ast.nodes[2]->name == "Statement");
-            SQObjectPtr varname = makeString(ast.nodes[0]->token);
-            if (!CheckDuplicateLocalIdentifier(varname, _SC("Function"), false))
-                return false;
-
-            SQFuncState *funcstate = _fs->PushChildState(_ss(_vm));
-            funcstate->_name = varname;
-            funcstate->AddParameter(_fs->CreateString(_SC("this")));
-            funcstate->_sourcename = _sourcename;
-            funcstate->_sourcename_ptr = _sourcename_ptr;
-            SQInteger defparams = 0;
-            for (const auto &paramNode : ast.nodes[1]->nodes) {
-                SQObjectPtr paramname = makeString(paramNode->token);
-                funcstate->AddParameter(paramname);
-            }
-
-            SQFuncState *currchunk = _fs;
-            _fs = funcstate;
-
-            // body
-            if (!processNode(*ast.nodes[2].get(), depth+1))
-                return false;
-
-            //funcstate->AddLineInfos(_lex._prevtoken == _SC('\n')?_lex._lasttokenline:_lex._currentline, _lineinfo, true);
-            funcstate->AddInstruction(_OP_RETURN, -1);
-            funcstate->SetStackSize(0);
-
-            SQFunctionProto *func = funcstate->BuildProto();
-#ifdef _DEBUG_DUMP
-            funcstate->Dump(func);
-#endif
-            _fs = currchunk;
-            _fs->_functions.push_back(func);
-            _fs->PopChildState();
-
-            _fs->AddInstruction(_OP_CLOSURE, _fs->PushTarget(), _fs->_functions.size() - 1, 0);
-            _fs->PopTarget();
-            _fs->PushLocalVariable(varname);
-        }
-        else if (ast.name == "PrefixedExpr") {
-            assert(ast.nodes.size() >= 1);
-            assert(ast.nodes[0]->name == "Factor" || ast.nodes[0]->name == "LOADROOT");
-            size_t nNodes = ast.nodes.size();
-
-            if (!processNode(*ast.nodes[0].get(), depth+1)) {
-                printf("PrefixedExpr error at line %d\n", int(ast.line));
-                return false;
-            }
-
-            bool needPrepCall = false;
-            for (size_t i=1; i<nNodes; ++i) {
-                const auto &node = *ast.nodes[i].get();
-                bool nextIsCall = (i<nNodes-1) && ast.nodes[i+1]->name == "FunctionCall";
-
-                if (node.name == "SlotGet") {
-                    assert(node.nodes.size() == 1);
-
-                    if (!processNode(*node.nodes[0].get(), depth+1))
-                        return false;
-
-                    SQInteger flags = 0;
-
-                    if (nextIsCall) {
-                        assert(!needPrepCall);
-                        needPrepCall = true;
-                    } else {
-                        SQInteger p2 = _fs->PopTarget(); //src in OP_GET
-                        SQInteger p1 = _fs->PopTarget(); //key in OP_GET
-                        _fs->AddInstruction(_OP_GET, _fs->PushTarget(), p1, p2, flags);
-                    }
-                }
-                else if (node.name == "SlotNamedGet" || node.name == "RootSlotGet") {
-                    assert(node.nodes.size() == 1);
-
-                    SQInteger flags = 0;
-                    SQObjectPtr constant = makeString(node.nodes[0]->token);
-                    if (CanBeDefaultDelegate(constant))
-                        flags |= OP_GET_FLAG_ALLOW_DEF_DELEGATE;
-
-                    _fs->AddInstruction(_OP_LOAD, _fs->PushTarget(), _fs->GetConstant(constant));
-
-                    if (nextIsCall) {
-                        assert(!needPrepCall);
-                        needPrepCall = true;
-                    } else {
-                        SQInteger p2 = _fs->PopTarget(); //src in OP_GET
-                        SQInteger p1 = _fs->PopTarget(); //key in OP_GET
-                        _fs->AddInstruction(_OP_GET, _fs->PushTarget(), p1, p2, flags);
-                    }
-                }
-                else if (node.name == "FunctionCall") {
-                    assert(node.nodes.size() == 1);
-
-                    if (needPrepCall) {
-                        // member/slot function
-                        SQInteger key     = _fs->PopTarget();  /* location of the key */
-                        SQInteger table   = _fs->PopTarget();  /* location of the object */
-                        SQInteger closure = _fs->PushTarget(); /* location for the closure */
-                        SQInteger ttarget = _fs->PushTarget(); /* location for 'this' pointer */
-                        _fs->AddInstruction(_OP_PREPCALL, closure, key, table, ttarget);
-                        needPrepCall = false;
-                    }
-                    else {
-                        // local function
-                        _fs->AddInstruction(_OP_MOVE, _fs->PushTarget(), 0);
-                    }
-
-                    {
-                        Ast *args = node.nodes[0].get();
-                        //printf("%d arg nodes\n", int(args->nodes.size()));
-
-                        SQInteger nargs = 1;//this
-                        for (size_t i=0; i<args->nodes.size(); ++i) {
-                            if (!processNode(*args->nodes[i].get(), depth+2))
-                                return false;
-                            MoveIfCurrentTargetIsLocal();
-                            nargs++;
-                        }
-                        for(SQInteger i = 0; i < (nargs - 1); i++)
-                            _fs->PopTarget();
-                        SQInteger stackbase = _fs->PopTarget();
-                        SQInteger closure = _fs->PopTarget();
-                        SQInteger target = _fs->PushTarget();
-                        assert(target >= -1);
-                        assert(target < 255);
-                        _fs->AddInstruction(_OP_CALL, target, closure, stackbase, nargs);
-                    }
-                }
-
-            }
-        }
-        else if (ast.name == "SlotGet" || ast.name == "SlotNamedGet" || ast.name == "FunctionCall") {
-            printf("'%s' should be processed from PrefixedExpr node\n", ast.name.c_str());
+        else {
+            assert(false);
             return false;
         }
-        else if (ast.name == "VarModifyStmt") {
-            assert(ast.nodes.size() == 3);
+        return true;
+    }
 
+    bool Factor(const Ast &ast) {
+        const auto& tp = ast.nodes[0]->name;
+        if (tp == "IDENTIFIER") {
             SQObjectPtr id = makeString(ast.nodes[0]->token);
+
             SQInteger pos;
-            bool isOuter = false;
-            if ((pos = _fs->GetLocalVariable(id)) != -1) {
+            if ((pos = _fs->GetLocalVariable(id)) != -1) // Handle a local variable (includes 'this')
                 _fs->PushTarget(pos);
-            } else if ((pos = _fs->GetOuterVariable(id)) != -1) {
+            else if ((pos = _fs->GetOuterVariable(id)) != -1)
                 _fs->AddInstruction(_OP_GETOUTER, _fs->PushTarget(), pos);
-                isOuter = true;
-            } else {
+            else if (sq_isstring(_fs->_name) && scstrcmp(_stringval(_fs->_name), _stringval(id))==0)
+                _fs->AddInstruction(_OP_LOADCALLEE, _fs->PushTarget());
+            else {
                 printf("Unknown local variable '%s'\n", _stringval(id));
                 return false;
             }
+        }
+        if (!processChildren(ast))
+            return false;
+        return true;
+    }
 
-            if (ast.nodes[1]->token != "=") {
-                printf("Only '=' is supported for now\n");
+    bool ReturnStatement(const Ast &ast) {
+        SQInteger retexp = _fs->GetCurrentPos()+1;
+
+        if (!processChildren(ast))
+            return false;
+
+        if (_fs->_traps > 0)
+            _fs->AddInstruction(_OP_POPTRAP, _fs->_traps, 0);
+        _fs->_returnexp = retexp;
+        _fs->AddInstruction(_OP_RETURN, 1, _fs->PopTarget(),_fs->GetStackSize());
+        return true;
+    }
+
+    bool BlockStatement(const Ast &ast) {
+        BEGIN_SCOPE();
+        if (!processChildren(ast))
+            return false;
+        END_SCOPE_NO_CLOSE();
+        //END_SCOPE();
+        // if(closeframe) {
+        //     END_SCOPE();
+        // }
+        // else {
+        //     END_SCOPE_NO_CLOSE();
+        // }
+        return true;
+    }
+
+    bool BinaryOpExpr(const Ast &ast) {
+        assert(ast.nodes.size() == 3);
+        if (!processChildren(ast))
+            return false;
+        SQInteger op1 = _fs->PopTarget();
+        SQInteger op2 = _fs->PopTarget();
+        SQInteger op3 = 0;
+
+        SQOpcode op;
+        if (ast.nodes[1]->name != "BINARY_OP") {
+            printf("BINARY_OP expected\n");
+            return false;
+        }
+
+        auto opStr = ast.nodes[1]->token;
+        if (opStr == "+")           op = _OP_ADD;
+        else if (opStr == "-")      op = _OP_SUB;
+        else if (opStr == "*")      op = _OP_MUL;
+        else if (opStr == "/")      op = _OP_DIV;
+        else if (opStr == "%")      op = _OP_MOD;
+        else if (opStr == "==")     op = _OP_EQ;
+        else if (opStr == "!=")     op = _OP_NE;
+        else if (opStr == ">")      {op = _OP_CMP; op3 = CMP_G;}
+        else if (opStr == "<")      {op = _OP_CMP; op3 = CMP_L;}
+        else if (opStr == ">=")     {op = _OP_CMP; op3 = CMP_GE;}
+        else if (opStr == "<=")     {op = _OP_CMP; op3 = CMP_LE;}
+        else if (opStr == "<=>")    {op = _OP_CMP; op3 = CMP_3W;}
+        else {
+            printf("Unknown operator '%s'\n", std::string(opStr).c_str());
+            return false;
+        }
+
+        _fs->AddInstruction(op, _fs->PushTarget(), op1, op2, op3);
+        return true;
+    }
+
+    bool LocalVarDeclStmt(const Ast &ast) {
+        SQObjectPtr varname = makeString(ast.nodes[0]->token);
+        if (!CheckDuplicateLocalIdentifier(varname, _SC("Local variable"), false))
+            return false;
+
+        if (ast.nodes.size() > 1) {
+            if (!processChildren(ast))
                 return false;
+            SQInteger src = _fs->PopTarget();
+            SQInteger dest = _fs->PushTarget();
+            if (dest != src)
+                _fs->AddInstruction(_OP_MOVE, dest, src);
+        }
+        else {
+            _fs->AddInstruction(_OP_LOADNULLS, _fs->PushTarget(), 1);
+        }
+        _fs->PopTarget();
+        _fs->PushLocalVariable(varname);
+        return true;
+    }
+
+    bool LocalFuncDeclStmt(const Ast &ast) {
+        assert(ast.nodes[0]->name == "IDENTIFIER");
+        assert(ast.nodes[1]->name == "FuncParams");
+        assert(ast.nodes[2]->name == "Statement");
+        SQObjectPtr varname = makeString(ast.nodes[0]->token);
+        if (!CheckDuplicateLocalIdentifier(varname, _SC("Function"), false))
+            return false;
+
+        SQFuncState *funcstate = _fs->PushChildState(_ss(_vm));
+        funcstate->_name = varname;
+        funcstate->AddParameter(_fs->CreateString(_SC("this")));
+        funcstate->_sourcename = _sourcename;
+        funcstate->_sourcename_ptr = _sourcename_ptr;
+        SQInteger defparams = 0;
+        for (const auto &paramNode : ast.nodes[1]->nodes) {
+            SQObjectPtr paramname = makeString(paramNode->token);
+            funcstate->AddParameter(paramname);
+        }
+
+        SQFuncState *currchunk = _fs;
+        _fs = funcstate;
+
+        // body
+        if (!processNode(*ast.nodes[2].get()))
+            return false;
+
+        //funcstate->AddLineInfos(_lex._prevtoken == _SC('\n')?_lex._lasttokenline:_lex._currentline, _lineinfo, true);
+        funcstate->AddInstruction(_OP_RETURN, -1);
+        funcstate->SetStackSize(0);
+
+        SQFunctionProto *func = funcstate->BuildProto();
+#ifdef _DEBUG_DUMP
+        funcstate->Dump(func);
+#endif
+        _fs = currchunk;
+        _fs->_functions.push_back(func);
+        _fs->PopChildState();
+
+        _fs->AddInstruction(_OP_CLOSURE, _fs->PushTarget(), _fs->_functions.size() - 1, 0);
+        _fs->PopTarget();
+        _fs->PushLocalVariable(varname);
+        return true;
+    }
+
+    bool PrefixedExpr(const Ast &ast) {
+        assert(ast.nodes.size() >= 1);
+        assert(ast.nodes[0]->name == "Factor" || ast.nodes[0]->name == "LOADROOT");
+        size_t nNodes = ast.nodes.size();
+
+        if (!processNode(*ast.nodes[0].get())) {
+            printf("PrefixedExpr error at line %d\n", int(ast.line));
+            return false;
+        }
+
+        bool needPrepCall = false;
+        for (size_t i=1; i<nNodes; ++i) {
+            const auto &node = *ast.nodes[i].get();
+            bool nextIsCall = (i<nNodes-1) && ast.nodes[i+1]->name == "FunctionCall";
+
+            if (node.name == "SlotGet") {
+                assert(node.nodes.size() == 1);
+
+                if (!processNode(*node.nodes[0].get()))
+                    return false;
+
+                SQInteger flags = 0;
+
+                if (nextIsCall) {
+                    assert(!needPrepCall);
+                    needPrepCall = true;
+                } else {
+                    SQInteger p2 = _fs->PopTarget(); //src in OP_GET
+                    SQInteger p1 = _fs->PopTarget(); //key in OP_GET
+                    _fs->AddInstruction(_OP_GET, _fs->PushTarget(), p1, p2, flags);
+                }
             }
+            else if (node.name == "SlotNamedGet" || node.name == "RootSlotGet") {
+                assert(node.nodes.size() == 1);
 
-            if (!processNode(*ast.nodes[2].get(), depth+1))
-                return false;
+                SQInteger flags = 0;
+                SQObjectPtr constant = makeString(node.nodes[0]->token);
+                if (CanBeDefaultDelegate(constant))
+                    flags |= OP_GET_FLAG_ALLOW_DEF_DELEGATE;
 
-            if (!isOuter) {
-                SQInteger src = _fs->PopTarget();
-                SQInteger dst = pos; //_fs->TopTarget();
-                _fs->AddInstruction(_OP_MOVE, dst, src);
-            } else {
-                SQInteger src = _fs->PopTarget();
-                SQInteger dst = _fs->PushTarget();
-                _fs->AddInstruction(_OP_SETOUTER, dst, pos, src);
+                _fs->AddInstruction(_OP_LOAD, _fs->PushTarget(), _fs->GetConstant(constant));
+
+                if (nextIsCall) {
+                    assert(!needPrepCall);
+                    needPrepCall = true;
+                } else {
+                    SQInteger p2 = _fs->PopTarget(); //src in OP_GET
+                    SQInteger p1 = _fs->PopTarget(); //key in OP_GET
+                    _fs->AddInstruction(_OP_GET, _fs->PushTarget(), p1, p2, flags);
+                }
+            }
+            else if (node.name == "FunctionCall") {
+                assert(node.nodes.size() == 1);
+
+                if (needPrepCall) {
+                    // member/slot function
+                    SQInteger key     = _fs->PopTarget();  /* location of the key */
+                    SQInteger table   = _fs->PopTarget();  /* location of the object */
+                    SQInteger closure = _fs->PushTarget(); /* location for the closure */
+                    SQInteger ttarget = _fs->PushTarget(); /* location for 'this' pointer */
+                    _fs->AddInstruction(_OP_PREPCALL, closure, key, table, ttarget);
+                    needPrepCall = false;
+                }
+                else {
+                    // local function
+                    _fs->AddInstruction(_OP_MOVE, _fs->PushTarget(), 0);
+                }
+
+                {
+                    Ast *args = node.nodes[0].get();
+                    //printf("%d arg nodes\n", int(args->nodes.size()));
+
+                    SQInteger nargs = 1;//this
+                    for (size_t i=0; i<args->nodes.size(); ++i) {
+                        if (!processNode(*args->nodes[i].get()))
+                            return false;
+                        MoveIfCurrentTargetIsLocal();
+                        nargs++;
+                    }
+                    for(SQInteger i = 0; i < (nargs - 1); i++)
+                        _fs->PopTarget();
+                    SQInteger stackbase = _fs->PopTarget();
+                    SQInteger closure = _fs->PopTarget();
+                    SQInteger target = _fs->PushTarget();
+                    assert(target >= -1);
+                    assert(target < 255);
+                    _fs->AddInstruction(_OP_CALL, target, closure, stackbase, nargs);
+                }
             }
         }
-        else if (ast.name == "SlotModifyStmt") {
-            assert(ast.nodes.size() == 4);
-            assert(ast.nodes[2]->token == "=" || ast.nodes[2]->token == "<-");
-            if (!processChildren(ast, depth))
+        return true;
+    }
+
+
+    bool VarModifyStmt(const Ast &ast) {
+        assert(ast.nodes.size() == 3);
+
+        SQObjectPtr id = makeString(ast.nodes[0]->token);
+        SQInteger pos;
+        bool isOuter = false;
+        if ((pos = _fs->GetLocalVariable(id)) != -1) {
+            _fs->PushTarget(pos);
+        } else if ((pos = _fs->GetOuterVariable(id)) != -1) {
+            _fs->AddInstruction(_OP_GETOUTER, _fs->PushTarget(), pos);
+            isOuter = true;
+        } else {
+            printf("Unknown local variable '%s'\n", _stringval(id));
+            return false;
+        }
+
+        if (ast.nodes[1]->token != "=") {
+            printf("Only '=' is supported for now\n");
+            return false;
+        }
+
+        if (!processNode(*ast.nodes[2].get()))
+            return false;
+
+        if (!isOuter) {
+            SQInteger src = _fs->PopTarget();
+            SQInteger dst = pos; //_fs->TopTarget();
+            _fs->AddInstruction(_OP_MOVE, dst, src);
+        } else {
+            SQInteger src = _fs->PopTarget();
+            SQInteger dst = _fs->PushTarget();
+            _fs->AddInstruction(_OP_SETOUTER, dst, pos, src);
+        }
+        return true;
+    }
+
+
+    bool SlotModifyStmt(const Ast &ast) {
+        assert(ast.nodes.size() == 4);
+        assert(ast.nodes[2]->token == "=" || ast.nodes[2]->token == "<-");
+        if (!processChildren(ast))
+            return false;
+
+        SQInteger val = _fs->PopTarget();
+        SQInteger key = _fs->PopTarget();
+        SQInteger src = _fs->PopTarget();
+        SQOpcode  op = ast.nodes[2]->token == "=" ? _OP_SET : _OP_NEWSLOT;
+        _fs->AddInstruction(op, _fs->PushTarget(), src, key, val);
+        return true;
+    }
+
+
+    bool ArrayInit(const Ast &ast) {
+        assert(ast.nodes.size() == 1);
+        assert(ast.nodes[0]->name == "ArgValues");
+        const auto &args = ast.nodes[0];
+
+        SQInteger len = args->nodes.size();
+        _fs->AddInstruction(_OP_NEWOBJ, _fs->PushTarget(), len, 0, NOT_ARRAY);
+        for (SQInteger key=0; key<len; ++key) {
+            if (!processNode(*args->nodes[key].get()))
+                return false;
+            SQInteger val = _fs->PopTarget();
+            SQInteger array = _fs->TopTarget();
+            _fs->AddInstruction(_OP_APPENDARRAY, array, val, AAT_STACK);
+        }
+        return true;
+    }
+
+    bool TableInit(const Ast &ast) {
+        SQInteger len = ast.nodes.size();
+        SQInteger tblPos = _fs->PushTarget();
+        _fs->AddInstruction(_OP_NEWOBJ, tblPos, len, 0, NOT_TABLE);
+        for (const auto &item : ast.nodes) {
+            assert(item->name == "TableInitItem");
+            if (item->nodes[0]->name == "IDENTIFIER") {
+                SQObjectPtr key = makeString(item->nodes[0]->token);
+                _fs->AddInstruction(_OP_LOAD, _fs->PushTarget(), _fs->GetConstant(key));
+
+                if (item->nodes.size()==1) {
+                    SQInteger pos;
+                    if ((pos = _fs->GetLocalVariable(key)) != -1)
+                        _fs->PushTarget(pos);
+                    else if ((pos = _fs->GetOuterVariable(key)) != -1)
+                        _fs->AddInstruction(_OP_GETOUTER, _fs->PushTarget(), pos);
+                    else {
+                        printf("Local variable '%s' not found\n", _stringval(key));
+                        return false;
+                    }
+                }
+            }
+            if (!processNode(*item.get()))
                 return false;
 
             SQInteger val = _fs->PopTarget();
             SQInteger key = _fs->PopTarget();
-            SQInteger src = _fs->PopTarget();
-            SQOpcode  op = ast.nodes[2]->token == "=" ? _OP_SET : _OP_NEWSLOT;
-            _fs->AddInstruction(op, _fs->PushTarget(), src, key, val);
+            //unsigned char flags = isstatic ? NEW_SLOT_STATIC_FLAG : 0;
+            SQInteger table = tblPos ; // _fs->TopTarget(); //<<BECAUSE OF THIS NO COMMON EMIT FUNC IS POSSIBLE
+            _fs->AddInstruction(_OP_NEWSLOT, 0xFF, table, key, val);
         }
-        else if (ast.name == "ArrayInit") {
-            assert(ast.nodes.size() == 1);
-            assert(ast.nodes[0]->name == "ArgValues");
-            const auto &args = ast.nodes[0];
+        return true;
+    }
 
-            SQInteger len = args->nodes.size();
-            _fs->AddInstruction(_OP_NEWOBJ, _fs->PushTarget(), len, 0, NOT_ARRAY);
-            for (SQInteger key=0; key<len; ++key) {
-                if (!processNode(*args->nodes[key].get(), depth+1))
-                    return false;
-                SQInteger val = _fs->PopTarget();
-                SQInteger array = _fs->TopTarget();
-                _fs->AddInstruction(_OP_APPENDARRAY, array, val, AAT_STACK);
-            }
-        }
-        else if (ast.name == "TableInit") {
-            SQInteger len = ast.nodes.size();
-            SQInteger tblPos = _fs->PushTarget();
-            _fs->AddInstruction(_OP_NEWOBJ, tblPos, len, 0, NOT_TABLE);
-            for (const auto &item : ast.nodes) {
-                assert(item->name == "TableInitItem");
-                if (item->nodes[0]->name == "IDENTIFIER") {
-                    SQObjectPtr key = makeString(item->nodes[0]->token);
-                    _fs->AddInstruction(_OP_LOAD, _fs->PushTarget(), _fs->GetConstant(key));
 
-                    if (item->nodes.size()==1) {
-                        SQInteger pos;
-                        if ((pos = _fs->GetLocalVariable(key)) != -1)
-                            _fs->PushTarget(pos);
-                        else if ((pos = _fs->GetOuterVariable(key)) != -1)
-                            _fs->AddInstruction(_OP_GETOUTER, _fs->PushTarget(), pos);
-                        else {
-                            printf("Local variable '%s' not found\n", _stringval(key));
-                            return false;
-                        }
-                    }
-                }
-                if (!processNode(*item.get(), depth+1))
-                    return false;
+    bool IfStmt(const Ast &ast) {
+        assert(ast.nodes.size() == 2 || ast.nodes.size() == 3);
+        assert(ast.nodes[0]->name == "Expression");
+        if (!processNode(*ast.nodes[0].get()))
+            return false;
 
-                SQInteger val = _fs->PopTarget();
-                SQInteger key = _fs->PopTarget();
-                //unsigned char flags = isstatic ? NEW_SLOT_STATIC_FLAG : 0;
-                SQInteger table = tblPos ; // _fs->TopTarget(); //<<BECAUSE OF THIS NO COMMON EMIT FUNC IS POSSIBLE
-                _fs->AddInstruction(_OP_NEWSLOT, 0xFF, table, key, val);
-            }
-        }
-        else if (ast.name == "IfStmt") {
-            assert(ast.nodes.size() == 2 || ast.nodes.size() == 3);
-            assert(ast.nodes[0]->name == "Expression");
-            if (!processNode(*ast.nodes[0].get(), depth+1))
+        _fs->AddInstruction(_OP_JZ, _fs->PopTarget());
+        SQInteger jnepos = _fs->GetCurrentPos();
+        if (!processNode(*ast.nodes[1].get()))
+            return false;
+        SQInteger endifblock = _fs->GetCurrentPos();
+
+        bool hasElse = ast.nodes.size() == 3;
+        if (hasElse) {
+            _fs->AddInstruction(_OP_JMP);
+            SQInteger jmppos = _fs->GetCurrentPos();
+            if (!processNode(*ast.nodes[2].get()))
                 return false;
+            _fs->SetInstructionParam(jmppos, 1, _fs->GetCurrentPos() - jmppos);
+        }
+        _fs->SetInstructionParam(jnepos, 1, endifblock - jnepos + (hasElse?1:0));
+        return true;
+    }
 
+
+    bool ForStmt(const Ast &ast) {
+        assert(ast.nodes.size()==3 || ast.nodes.size()==4);
+        const auto &forInitNode = *ast.nodes[0].get();
+        const auto &forCondNode = *ast.nodes[1].get();
+        const auto &forActionNode = *ast.nodes[2].get();
+
+        BEGIN_SCOPE();
+
+        if (!processNode(forInitNode))
+            return false;
+
+        _fs->SnoozeOpt();
+        SQInteger jmppos = _fs->GetCurrentPos();
+        SQInteger jzpos = -1;
+
+        if (!forCondNode.nodes.empty()) {
+            if (!processNode(forCondNode))
+                return false;
             _fs->AddInstruction(_OP_JZ, _fs->PopTarget());
-            SQInteger jnepos = _fs->GetCurrentPos();
-            if (!processNode(*ast.nodes[1].get(), depth+1))
-                return false;
-            SQInteger endifblock = _fs->GetCurrentPos();
-
-            bool hasElse = ast.nodes.size() == 3;
-            if (hasElse) {
-                _fs->AddInstruction(_OP_JMP);
-                SQInteger jmppos = _fs->GetCurrentPos();
-                if (!processNode(*ast.nodes[2].get(), depth+1))
-                    return false;
-                _fs->SetInstructionParam(jmppos, 1, _fs->GetCurrentPos() - jmppos);
-            }
-            _fs->SetInstructionParam(jnepos, 1, endifblock - jnepos + (hasElse?1:0));
+            jzpos = _fs->GetCurrentPos();
         }
-        else if (ast.name == "ForStmt") {
-            assert(ast.nodes.size()==3 || ast.nodes.size()==4);
-            const auto &forInitNode = *ast.nodes[0].get();
-            const auto &forCondNode = *ast.nodes[1].get();
-            const auto &forActionNode = *ast.nodes[2].get();
 
-            BEGIN_SCOPE();
-
-            if (!processNode(forInitNode, depth+1))
+        _fs->SnoozeOpt();
+        SQInteger expstart = _fs->GetCurrentPos() + 1;
+        for (const auto &node : forActionNode.nodes) {
+            assert(node->name == "Expression");
+            if (!processNode(*node.get()))
                 return false;
-
-            _fs->SnoozeOpt();
-            SQInteger jmppos = _fs->GetCurrentPos();
-            SQInteger jzpos = -1;
-
-            if (!forCondNode.nodes.empty()) {
-                if (!processNode(forCondNode, depth+1))
-                    return false;
-                _fs->AddInstruction(_OP_JZ, _fs->PopTarget());
-                jzpos = _fs->GetCurrentPos();
-            }
-
-            _fs->SnoozeOpt();
-            SQInteger expstart = _fs->GetCurrentPos() + 1;
-            for (const auto &node : forActionNode.nodes) {
-                assert(node->name == "Expression");
-                if (!processNode(*node.get(), depth+1))
-                    return false;
-                _fs->PopTarget();
-            }
-
-
-            _fs->SnoozeOpt();
-            SQInteger expend = _fs->GetCurrentPos();
-            SQInteger expsize = (expend - expstart) + 1;
-            SQInstructionVec exp(_fs->_sharedstate->_alloc_ctx);
-            if (expsize > 0) {
-                for (SQInteger i = 0; i < expsize; i++)
-                    exp.push_back(_fs->GetInstruction(expstart + i));
-                _fs->PopInstructions(expsize);
-            }
-
-            BEGIN_BREAKBLE_BLOCK()
-
-            if (ast.nodes.size() == 4) {
-                if (!processNode(*ast.nodes[3].get(), depth+1))
-                    return false;
-            }
-
-            SQInteger continuetrg = _fs->GetCurrentPos();
-            if (expsize > 0) {
-                for (SQInteger i = 0; i < expsize; i++)
-                    _fs->AddInstruction(exp[i]);
-            }
-            _fs->AddInstruction(_OP_JMP, 0, jmppos - _fs->GetCurrentPos() - 1, 0);
-            if (jzpos>  0)
-                _fs->SetInstructionParam(jzpos, 1, _fs->GetCurrentPos() - jzpos);
-
-            END_BREAKBLE_BLOCK(continuetrg);
-
-            END_SCOPE();
-        }
-        else if (ast.name == "ForeachStmt") {
-            //     ForeachStmt <- 'foreach' '(' IDENTIFIER (',' IDENTIFIER) 'in' Expression ')' Statement
-            assert(ast.nodes.size() == 3 || ast.nodes.size() == 4);
-
-            SQObject idxname, valname;
-            valname = makeString(ast.nodes[0]->token);
-            if (!CheckDuplicateLocalIdentifier(valname, _SC("Iterator"), false))
-                return false;
-
-            int containerIdx = 1, actionStmtIdx = 2;
-            if (ast.nodes.size() == 4) {
-                idxname = valname;
-                valname = makeString(ast.nodes[1]->token);
-                CheckDuplicateLocalIdentifier(valname, _SC("Iterator"), false);
-                containerIdx = 2;
-                actionStmtIdx = 3;
-            }
-            else {
-                idxname = _fs->CreateString(_SC("@INDEX@"));
-            }
-
-            //save the stack size
-            BEGIN_SCOPE();
-            //put the table in the stack(evaluate the table expression)
-            if (!processNode(*ast.nodes[containerIdx].get(), depth+1))
-                return false;
-
-            SQInteger container = _fs->TopTarget();
-            //push the index local var
-            SQInteger indexpos = _fs->PushLocalVariable(idxname);
-            _fs->AddInstruction(_OP_LOADNULLS, indexpos,1);
-            //push the value local var
-            SQInteger valuepos = _fs->PushLocalVariable(valname);
-            _fs->AddInstruction(_OP_LOADNULLS, valuepos,1);
-            //push reference index
-            SQInteger itrpos = _fs->PushLocalVariable(_fs->CreateString(_SC("@ITERATOR@"))); //use invalid id to make it inaccessible
-            _fs->AddInstruction(_OP_LOADNULLS, itrpos,1);
-            SQInteger jmppos = _fs->GetCurrentPos();
-            _fs->AddInstruction(_OP_FOREACH, container, 0, indexpos);
-            SQInteger foreachpos = _fs->GetCurrentPos();
-            _fs->AddInstruction(_OP_POSTFOREACH, container, 0, indexpos);
-            //generate the statement code
-            BEGIN_BREAKBLE_BLOCK()
-
-            if (!processNode(*ast.nodes[actionStmtIdx].get(), depth+1))
-                return false;
-
-            _fs->AddInstruction(_OP_JMP, 0, jmppos - _fs->GetCurrentPos() - 1);
-            _fs->SetInstructionParam(foreachpos, 1, _fs->GetCurrentPos() - foreachpos);
-            _fs->SetInstructionParam(foreachpos + 1, 1, _fs->GetCurrentPos() - foreachpos);
-            END_BREAKBLE_BLOCK(foreachpos - 1);
-            //restore the local variable stack(remove index,val and ref idx)
             _fs->PopTarget();
-            END_SCOPE();
         }
-        else if (ast.name == "BreakStmt") {
-            if(_fs->_breaktargets.size() <= 0) {
-                //Error(_SC("'break' has to be in a loop block"));
-                printf(_SC("'break' has to be in a loop block\n"));
-                return false;
-            }
-            if(_fs->_breaktargets.top() > 0){
-                _fs->AddInstruction(_OP_POPTRAP, _fs->_breaktargets.top(), 0);
-            }
-            RESOLVE_OUTERS();
-            _fs->AddInstruction(_OP_JMP, 0, -1234);
-            _fs->_unresolvedbreaks.push_back(_fs->GetCurrentPos());
-        }
-        else if (ast.name == "ContinueStmt") {
-            if(_fs->_continuetargets.size() <= 0) {
-                //Error(_SC("'continue' has to be in a loop block"));
-                printf(_SC("'continue' has to be in a loop block\n"));
-                return false;
-            }
-            if(_fs->_continuetargets.top() > 0) {
-                _fs->AddInstruction(_OP_POPTRAP, _fs->_continuetargets.top(), 0);
-            }
-            RESOLVE_OUTERS();
-            _fs->AddInstruction(_OP_JMP, 0, -1234);
-            _fs->_unresolvedcontinues.push_back(_fs->GetCurrentPos());
 
+
+        _fs->SnoozeOpt();
+        SQInteger expend = _fs->GetCurrentPos();
+        SQInteger expsize = (expend - expstart) + 1;
+        SQInstructionVec exp(_fs->_sharedstate->_alloc_ctx);
+        if (expsize > 0) {
+            for (SQInteger i = 0; i < expsize; i++)
+                exp.push_back(_fs->GetInstruction(expstart + i));
+            _fs->PopInstructions(expsize);
+        }
+
+        BEGIN_BREAKBLE_BLOCK()
+
+        if (ast.nodes.size() == 4) {
+            if (!processNode(*ast.nodes[3].get()))
+                return false;
+        }
+
+        SQInteger continuetrg = _fs->GetCurrentPos();
+        if (expsize > 0) {
+            for (SQInteger i = 0; i < expsize; i++)
+                _fs->AddInstruction(exp[i]);
+        }
+        _fs->AddInstruction(_OP_JMP, 0, jmppos - _fs->GetCurrentPos() - 1, 0);
+        if (jzpos>  0)
+            _fs->SetInstructionParam(jzpos, 1, _fs->GetCurrentPos() - jzpos);
+
+        END_BREAKBLE_BLOCK(continuetrg);
+
+        END_SCOPE();
+        return true;
+    }
+
+
+    bool ForeachStmt(const Ast &ast) {
+        //     ForeachStmt <- 'foreach' '(' IDENTIFIER (',' IDENTIFIER) 'in' Expression ')' Statement
+        assert(ast.nodes.size() == 3 || ast.nodes.size() == 4);
+
+        SQObject idxname, valname;
+        valname = makeString(ast.nodes[0]->token);
+        if (!CheckDuplicateLocalIdentifier(valname, _SC("Iterator"), false))
+            return false;
+
+        int containerIdx = 1, actionStmtIdx = 2;
+        if (ast.nodes.size() == 4) {
+            idxname = valname;
+            valname = makeString(ast.nodes[1]->token);
+            CheckDuplicateLocalIdentifier(valname, _SC("Iterator"), false);
+            containerIdx = 2;
+            actionStmtIdx = 3;
         }
         else {
-            if (!processChildren(ast, depth))
-                return false;
+            idxname = _fs->CreateString(_SC("@INDEX@"));
         }
 
+        //save the stack size
+        BEGIN_SCOPE();
+        //put the table in the stack(evaluate the table expression)
+        if (!processNode(*ast.nodes[containerIdx].get()))
+            return false;
+
+        SQInteger container = _fs->TopTarget();
+        //push the index local var
+        SQInteger indexpos = _fs->PushLocalVariable(idxname);
+        _fs->AddInstruction(_OP_LOADNULLS, indexpos,1);
+        //push the value local var
+        SQInteger valuepos = _fs->PushLocalVariable(valname);
+        _fs->AddInstruction(_OP_LOADNULLS, valuepos,1);
+        //push reference index
+        SQInteger itrpos = _fs->PushLocalVariable(_fs->CreateString(_SC("@ITERATOR@"))); //use invalid id to make it inaccessible
+        _fs->AddInstruction(_OP_LOADNULLS, itrpos,1);
+        SQInteger jmppos = _fs->GetCurrentPos();
+        _fs->AddInstruction(_OP_FOREACH, container, 0, indexpos);
+        SQInteger foreachpos = _fs->GetCurrentPos();
+        _fs->AddInstruction(_OP_POSTFOREACH, container, 0, indexpos);
+        //generate the statement code
+        BEGIN_BREAKBLE_BLOCK()
+
+        if (!processNode(*ast.nodes[actionStmtIdx].get()))
+            return false;
+
+        _fs->AddInstruction(_OP_JMP, 0, jmppos - _fs->GetCurrentPos() - 1);
+        _fs->SetInstructionParam(foreachpos, 1, _fs->GetCurrentPos() - foreachpos);
+        _fs->SetInstructionParam(foreachpos + 1, 1, _fs->GetCurrentPos() - foreachpos);
+        END_BREAKBLE_BLOCK(foreachpos - 1);
+        //restore the local variable stack(remove index,val and ref idx)
+        _fs->PopTarget();
+        END_SCOPE();
+
+        return true;
+    }
+
+
+    bool BreakStmt(const Ast &ast) {
+        if(_fs->_breaktargets.size() <= 0) {
+            //Error(_SC("'break' has to be in a loop block"));
+            printf(_SC("'break' has to be in a loop block\n"));
+            return false;
+        }
+        if(_fs->_breaktargets.top() > 0){
+            _fs->AddInstruction(_OP_POPTRAP, _fs->_breaktargets.top(), 0);
+        }
+        RESOLVE_OUTERS();
+        _fs->AddInstruction(_OP_JMP, 0, -1234);
+        _fs->_unresolvedbreaks.push_back(_fs->GetCurrentPos());
+        return true;
+    }
+
+
+    bool ContinueStmt(const Ast &ast) {
+        if(_fs->_continuetargets.size() <= 0) {
+            //Error(_SC("'continue' has to be in a loop block"));
+            printf(_SC("'continue' has to be in a loop block\n"));
+            return false;
+        }
+        if(_fs->_continuetargets.top() > 0) {
+            _fs->AddInstruction(_OP_POPTRAP, _fs->_continuetargets.top(), 0);
+        }
+        RESOLVE_OUTERS();
+        _fs->AddInstruction(_OP_JMP, 0, -1234);
+        _fs->_unresolvedcontinues.push_back(_fs->GetCurrentPos());
+        return true;
+    }
+
+
+    bool processNode(const Ast &ast)
+    {
+        //printf("%*cname = %s | token = %s\n", depth*2, ' ',
+        //    ast.name.c_str(), ast.is_token ? std::string(ast.token).c_str() : "N/A");
+
+        if (ast.name == "Statement")
+            return Statement(ast);
+        else if (ast.name == "INTEGER" || ast.name == "FLOAT" || ast.name == "BOOLEAN" || ast.name == "NULL" || ast.name == "STRING_LITERAL")
+            return FactorPush(ast);
+        else if (ast.name == "LOADROOT") {
+            _fs->AddInstruction(_OP_LOADROOT, _fs->PushTarget());
+        }
+        else if (ast.name == "ReturnStatement")
+            return ReturnStatement(ast);
+        else if (ast.name == "BlockStmt")
+            return BlockStatement(ast);
+        else if (ast.name == "BinaryOpExpr")
+            return BinaryOpExpr(ast);
+        else if (ast.name == "LocalVarDeclStmt")
+            return LocalVarDeclStmt(ast);
+        else if (ast.name == "Factor")
+            return Factor(ast);
+        else if (ast.name == "LocalFuncDeclStmt")
+            return LocalFuncDeclStmt(ast);
+        else if (ast.name == "PrefixedExpr")
+            return PrefixedExpr(ast);
+        else if (ast.name == "SlotGet" || ast.name == "SlotNamedGet" || ast.name == "FunctionCall") {
+            printf("'%s' should be processed from PrefixedExpr node\n", ast.name.c_str());
+            return false;
+        }
+        else if (ast.name == "VarModifyStmt")
+            return VarModifyStmt(ast);
+        else if (ast.name == "SlotModifyStmt")
+            return SlotModifyStmt(ast);
+        else if (ast.name == "ArrayInit")
+            return ArrayInit(ast);
+        else if (ast.name == "TableInit")
+            return TableInit(ast);
+        else if (ast.name == "IfStmt")
+            return IfStmt(ast);
+        else if (ast.name == "ForStmt")
+            return ForStmt(ast);
+        else if (ast.name == "ForeachStmt")
+            return ForeachStmt(ast);
+        else if (ast.name == "BreakStmt")
+            return BreakStmt(ast);
+        else if (ast.name == "ContinueStmt")
+            return ContinueStmt(ast);
+        else {
+            if (!processChildren(ast))
+                return false;
+        }
 
         return true;
     }
@@ -810,7 +898,7 @@ public:
         _fs->_sourcename_ptr = _sourcename_ptr;
         SQInteger stacksize = _fs->GetStackSize();
 
-        if (!processNode(ast, 0))
+        if (!processNode(ast))
             return false;
 
         _fs->SetStackSize(stacksize);
