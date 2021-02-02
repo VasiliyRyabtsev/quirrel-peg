@@ -1,10 +1,10 @@
 static const char *grammar = R"(
-    Statements <- ( Statement (';' / EOL)* )*
+    Statements <- Statement*
     Statement <- (
         ReturnStatement / IfStmt / ForStmt / ForeachStmt / BlockStmt /
         BreakStmt / ContinueStmt / ThrowStmt / TryCatchStmt /
         'local' LocalDeclStatement / VarModifyStmt / SlotModifyStmt /
-        Expression
+        Expression / ';'
     )
 
     ReturnStatement <- 'return' Expression
@@ -54,9 +54,9 @@ static const char *grammar = R"(
     SlotModifyStmt  <- Factor '[' Expression ']' SlotModifyOp Expression
     SlotModifyOp    <- '=' / '<-'
 
-    IfStmt      <- 'if' '(' Expression ')' ('{' Statements '}' / Statement) ('else' ('{' Statements '}' / Statement))?
+    IfStmt      <- 'if' '(' Expression ')' Statement ('else' Statement)?
 
-    ForStmt     <- 'for' '(' ForInit ';' ForCond ';' ForAction ')' ('{' Statements '}' / ';')
+    ForStmt     <- 'for' '(' ForInit ';' ForCond ';' ForAction ')' Statement
     ForInit     <- ('local' LocalVarsDeclStmt)?
     ForCond     <- Expression?
     ForAction   <- Expression? (',' Expression)*
