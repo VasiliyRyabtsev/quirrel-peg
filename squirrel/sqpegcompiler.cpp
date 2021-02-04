@@ -846,6 +846,65 @@ public:
         END_SCOPE();
     }
 
+    void SwitchStmt(const Ast &ast) {
+        const auto &testExpr = ast.nodes[0];
+        processNode(testExpr);
+
+        SQInteger expr = _fs->TopTarget();
+        bool bfirst = true;
+        SQInteger tonextcondjmp = -1;
+        SQInteger skipcondjmp = -1;
+        SQInteger __nbreaks__ = _fs->_unresolvedbreaks.size();
+        _fs->_breaktargets.push_back(0);
+        _fs->_blockstacksizes.push_back(_scope.stacksize);
+        for (size_t iCase = 1; iCase < ast.nodes.size() && ast.nodes[iCase]->name == "SwitchCase"; ++iCase) {
+            const auto &caseNode = ast.nodes[iCase];
+
+            if (!bfirst) {
+                _fs->AddInstruction(_OP_JMP, 0, 0);
+                skipcondjmp = _fs->GetCurrentPos();
+                _fs->SetInstructionParam(tonextcondjmp, 1, _fs->GetCurrentPos() - tonextcondjmp);
+            }
+            //condition
+            processNode(caseNode->nodes[0]);
+
+            SQInteger trg = _fs->PopTarget();
+            SQInteger eqtarget = trg;
+            bool local = _fs->IsLocal(trg);
+            if(local) {
+                eqtarget = _fs->PushTarget(); //we need to allocate a extra reg
+            }
+            _fs->AddInstruction(_OP_EQ, eqtarget, trg, expr);
+            _fs->AddInstruction(_OP_JZ, eqtarget, 0);
+            if(local) {
+                _fs->PopTarget();
+            }
+
+            //end condition
+            if(skipcondjmp != -1) {
+                _fs->SetInstructionParam(skipcondjmp, 1, (_fs->GetCurrentPos() - skipcondjmp));
+            }
+            tonextcondjmp = _fs->GetCurrentPos();
+            BEGIN_SCOPE();
+            //statements
+            processNode(caseNode->nodes[1]);
+            END_SCOPE();
+            bfirst = false;
+        }
+        if(tonextcondjmp != -1)
+            _fs->SetInstructionParam(tonextcondjmp, 1, _fs->GetCurrentPos() - tonextcondjmp);
+        if (ast.nodes.size()>1 && ast.nodes[ast.nodes.size()-1]->name=="SwitchDefault") {
+            const auto &nodeDefault = ast.nodes[ast.nodes.size()-1];
+            BEGIN_SCOPE();
+            processNode(nodeDefault);
+            END_SCOPE();
+        }
+        _fs->PopTarget();
+        __nbreaks__ = _fs->_unresolvedbreaks.size() - __nbreaks__;
+        if(__nbreaks__ > 0)ResolveBreaks(_fs, __nbreaks__);
+        _fs->_breaktargets.pop_back();
+        _fs->_blockstacksizes.pop_back();
+    }
 
 
     void BreakStmt(const Ast &ast) {
@@ -1011,6 +1070,8 @@ public:
             WhileStmt(ast);
         else if (ast.name == "DoWhileStmt")
             DoWhileStmt(ast);
+        else if (ast.name == "SwitchStmt")
+            SwitchStmt(ast);
         else if (ast.name == "BreakStmt")
             BreakStmt(ast);
         else if (ast.name == "ContinueStmt")
