@@ -1,7 +1,7 @@
 static const char *grammar = R"(
     Statements <- Statement*
     Statement <- (
-        ReturnStatement / IfStmt / ForStmt / ForeachStmt / BlockStmt /
+        ReturnStatement / IfStmt / ForStmt / ForeachStmt / WhileStmt / DoWhileStmt / BlockStmt /
         BreakStmt / ContinueStmt / ThrowStmt / TryCatchStmt /
         'local' LocalDeclStatement / VarModifyStmt / SlotModifyStmt /
         Expression / ';'
@@ -71,6 +71,9 @@ static const char *grammar = R"(
     ForAction   <- Expression? (',' Expression)*
 
     ForeachStmt <- 'foreach' '(' IDENTIFIER (',' IDENTIFIER)? 'in' Expression ')' Statement
+
+    WhileStmt      <- 'while' '(' Expression ')' Statement
+    DoWhileStmt    <- 'do' Statement 'while' '(' Expression ')'
 
     ThrowStmt   <- 'throw' Expression
     TryCatchStmt <- 'try' Statement 'catch' '(' IDENTIFIER ')' Statement

@@ -688,6 +688,45 @@ public:
     }
 
 
+    void WhileStmt(const Ast &ast) {
+        SQInteger jzpos, jmppos;
+        jmppos = _fs->GetCurrentPos();
+        processNode(ast.nodes[0]);
+
+        BEGIN_BREAKBLE_BLOCK();
+        _fs->AddInstruction(_OP_JZ, _fs->PopTarget());
+        jzpos = _fs->GetCurrentPos();
+        BEGIN_SCOPE();
+
+        processNode(ast.nodes[1]);
+
+        END_SCOPE();
+        _fs->AddInstruction(_OP_JMP, 0, jmppos - _fs->GetCurrentPos() - 1);
+        _fs->SetInstructionParam(jzpos, 1, _fs->GetCurrentPos() - jzpos);
+
+        END_BREAKBLE_BLOCK(jmppos);
+    }
+
+
+    void DoWhileStmt(const Ast &ast) {
+        SQInteger jmptrg = _fs->GetCurrentPos();
+        BEGIN_BREAKBLE_BLOCK()
+        BEGIN_SCOPE();
+
+        processNode(ast.nodes[0]);
+
+        END_SCOPE();
+
+        SQInteger continuetrg = _fs->GetCurrentPos();
+
+        processNode(ast.nodes[1]);
+
+        _fs->AddInstruction(_OP_JZ, _fs->PopTarget(), 1);
+        _fs->AddInstruction(_OP_JMP, 0, jmptrg - _fs->GetCurrentPos() - 1);
+        END_BREAKBLE_BLOCK(continuetrg);
+    }
+
+
     void ForStmt(const Ast &ast) {
         assert(ast.nodes.size()==3 || ast.nodes.size()==4);
         const auto &forInitNode = *ast.nodes[0].get();
@@ -800,6 +839,7 @@ public:
         _fs->PopTarget();
         END_SCOPE();
     }
+
 
 
     void BreakStmt(const Ast &ast) {
@@ -939,6 +979,10 @@ public:
             ForStmt(ast);
         else if (ast.name == "ForeachStmt")
             ForeachStmt(ast);
+        else if (ast.name == "WhileStmt")
+            WhileStmt(ast);
+        else if (ast.name == "DoWhileStmt")
+            DoWhileStmt(ast);
         else if (ast.name == "BreakStmt")
             BreakStmt(ast);
         else if (ast.name == "ContinueStmt")
