@@ -241,13 +241,19 @@ public:
         return res;
     }
 
+
     void processChildren(const Ast &ast) {
         for (const auto &node : ast.nodes)
             processNode(*node.get());
     }
 
+
     void Statement(const Ast &ast, bool closeframe=true) {
-        assert(ast.nodes.size()==1);
+        assert(ast.name == "Statement");
+        assert(ast.nodes.size()<=1); // 0 for ';'
+        if (ast.nodes.empty())
+            return;
+
         _fs->AddLineInfos(ast.line, _lineinfo);
         if (ast.nodes[0]->name == "BlockStmt")
             BlockStatement(*ast.nodes[0].get(), closeframe);
