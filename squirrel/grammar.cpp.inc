@@ -5,6 +5,7 @@ static const char *grammar = R"(
         IfStmt / ForStmt / ForeachStmt / WhileStmt / DoWhileStmt / SwitchStmt / BlockStmt /
         BreakStmt / ContinueStmt / ThrowStmt / TryCatchStmt /
         'local' LocalDeclStatement / VarModifyStmt / SlotModifyStmt /
+        FuncAtThisStmt / ClassAtThisStmt /
         Expression / ';'
     )
 
@@ -82,6 +83,9 @@ static const char *grammar = R"(
     SwitchStmt  <- 'switch' '(' Expression ')' '{' SwitchCase* SwitchDefault? '}'
     SwitchCase  <- 'case' Expression ':' Statements
     SwitchDefault <- 'default' ':' Statements
+
+    FuncAtThisStmt <- 'function' IDENTIFIER FuncDecl
+    ClassAtThisStmt <- 'class' IDENTIFIER ClassInit
 
     ThrowStmt   <- 'throw' Expression
     TryCatchStmt <- 'try' Statement 'catch' '(' IDENTIFIER ')' Statement

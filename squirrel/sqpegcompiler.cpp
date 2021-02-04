@@ -207,6 +207,12 @@ public:
         }
     }
 
+    void EmitDerefOp(SQOpcode op) {
+        SQInteger val = _fs->PopTarget();
+        SQInteger key = _fs->PopTarget();
+        SQInteger src = _fs->PopTarget();
+        _fs->AddInstruction(op,_fs->PushTarget(),src,key,val);
+    }
 
     std::string unescapeString(const std::string_view& s) {
         std::string res;
@@ -480,6 +486,38 @@ public:
         _fs->PopChildState();
 
         _fs->AddInstruction(_OP_CLOSURE, _fs->PushTarget(), _fs->_functions.size() - 1, 0);
+    }
+
+
+    void FuncAtThisStmt(const Ast &ast) {
+        assert(ast.nodes[0]->name == "IDENTIFIER");
+        assert(ast.nodes[1]->name == "FuncDecl");
+
+        SQObject id = makeString(ast.nodes[0]->token);
+
+        _fs->PushTarget(0);
+        _fs->AddInstruction(_OP_LOAD, _fs->PushTarget(), _fs->GetConstant(id));
+
+        FuncDecl(*ast.nodes[1], id);
+
+        EmitDerefOp(_OP_NEWSLOT);
+        _fs->PopTarget();
+    }
+
+
+    void ClassAtThisStmt(const Ast &ast) {
+        assert(ast.nodes[0]->name == "IDENTIFIER");
+        assert(ast.nodes[1]->name == "ClassInit");
+
+        SQObject id = makeString(ast.nodes[0]->token);
+
+        _fs->PushTarget(0);
+        _fs->AddInstruction(_OP_LOAD, _fs->PushTarget(), _fs->GetConstant(id));
+
+        processNode(*ast.nodes[1].get());
+
+        EmitDerefOp(_OP_NEWSLOT);
+        _fs->PopTarget();
     }
 
 
@@ -1118,6 +1156,10 @@ public:
             UnaryOperation(ast);
         else if (ast.name == "TernarySelect")
             TernarySelect(ast);
+        else if (ast.name == "FuncAtThisStmt")
+            FuncAtThisStmt(ast);
+        else if (ast.name == "ClassAtThisStmt")
+            ClassAtThisStmt(ast);
         else
             processChildren(ast);
     }
