@@ -241,6 +241,21 @@ public:
         return res;
     }
 
+    std::string unescapeVerbatimString(const std::string_view& s) {
+        std::string res;
+        res.reserve(s.length()+1);
+
+#define APPEND_CHAR(c) res.append(1, c)
+        for (size_t i=0, n=s.length(); i<n; ++i) {
+            res.append(1, s[i]);
+
+            if (s[i]=='"' && i<n-1 && s[i+1]=='"')
+                ++i;
+        }
+#undef APPEND_CHAR
+        return res;
+    }
+
 
     void processChildren(const Ast &ast) {
         for (const auto &node : ast.nodes)
@@ -293,6 +308,10 @@ public:
         }
         else if (ast.name == "STRING_LITERAL") {
             std::string s = unescapeString(ast.token);
+            _fs->AddInstruction(_OP_LOAD, _fs->PushTarget(), _fs->GetConstant(_fs->CreateString(s.c_str(), s.length())));
+        }
+        else if (ast.name == "VERBATIM_STRING") {
+            std::string s =  unescapeVerbatimString(ast.token);
             _fs->AddInstruction(_OP_LOAD, _fs->PushTarget(), _fs->GetConstant(_fs->CreateString(s.c_str(), s.length())));
         }
         else if (ast.name == "LOADROOT") {
@@ -1026,7 +1045,8 @@ public:
 
         if (ast.name == "Statement")
             Statement(ast);
-        else if (ast.name == "INTEGER" || ast.name == "FLOAT" || ast.name == "BOOLEAN" || ast.name == "NULL" || ast.name == "STRING_LITERAL")
+        else if (ast.name == "INTEGER" || ast.name == "FLOAT" || ast.name == "BOOLEAN" || ast.name == "NULL"
+            || ast.name == "STRING_LITERAL"|| ast.name == "VERBATIM_STRING")
             FactorPush(ast);
         else if (ast.name == "LOADROOT") {
             _fs->AddInstruction(_OP_LOADROOT, _fs->PushTarget());

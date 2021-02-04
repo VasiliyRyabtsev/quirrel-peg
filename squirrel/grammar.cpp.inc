@@ -36,7 +36,7 @@ static const char *grammar = R"(
 
     }
     PrefixedExpr    <- (LOADROOT RootSlotGet / Factor ) (FunctionCall / SlotGet / SlotNamedGet)*
-    Factor          <- FLOAT / INTEGER / BOOLEAN / NULL / STRING_LITERAL / IDENTIFIER /
+    Factor          <- FLOAT / INTEGER / BOOLEAN / NULL / STRING_LITERAL / VERBATIM_STRING / IDENTIFIER /
                         ArrayInit / TableInit / 'class' ClassInit / UnaryOperation / '(' Expression ')'
 
     TernarySelect   <- '?' Expression ':' Expression
@@ -88,7 +88,8 @@ static const char *grammar = R"(
     FLOAT       <- < [-+]?[0-9]* '.'? [0-9]+([eE][-+]?[0-9]+)? / ['-+']?[0-9]+ '.' [0-9]* >
     BOOLEAN     <- < 'true' | 'false' >
     NULL        <- 'null'
-    STRING_LITERAL <- '"' < ([^"] / '""')* > '"'
+    STRING_LITERAL <- '"' < ([^"])* > '"'
+    VERBATIM_STRING <- '@"' < ([^"] / '""')* > '"'
     IDENTIFIER  <- < !KEYWORD [a-zA-Z_][a-zA-Z_0-9]* / 'this' >
     BINARY_OP   <- '??' / '||' / '&&' / '^' / '&' /
                     '==' / '!=' / '<=>' / '<='/ '>=' / '<<' / '>>' / '>>>' / '<' / '>' /
