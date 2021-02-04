@@ -393,19 +393,32 @@ public:
 
 
     void LocalFuncDeclStmt(const Ast &ast) {
+        assert(ast.nodes.size() == 2);
         assert(ast.nodes[0]->name == "IDENTIFIER");
-        assert(ast.nodes[1]->name == "FuncParams");
-        assert(ast.nodes[2]->name == "Statement");
+        assert(ast.nodes[1]->name == "FuncDecl");
         SQObjectPtr varname = makeString(ast.nodes[0]->token);
         CheckDuplicateLocalIdentifier(varname, _SC("Function"), false);
 
+        FuncDecl(*ast.nodes[1].get(), varname);
+
+        _fs->PopTarget();
+        _fs->PushLocalVariable(varname);
+    }
+
+
+    void FuncDecl(const Ast &ast, SQObject &name) {
+        assert(ast.name == "FuncDecl");
+        assert(ast.nodes.size() == 2);
+        assert(ast.nodes[0]->name == "FuncParams");
+        assert(ast.nodes[1]->name == "Statement");
+
         SQFuncState *funcstate = _fs->PushChildState(_ss(_vm));
-        funcstate->_name = varname;
+        funcstate->_name = name;
         funcstate->AddParameter(_fs->CreateString(_SC("this")));
         funcstate->_sourcename = _sourcename;
         funcstate->_sourcename_ptr = _sourcename_ptr;
         SQInteger defparams = 0;
-        for (const auto &paramNode : ast.nodes[1]->nodes) {
+        for (const auto &paramNode : ast.nodes[0]->nodes) {
             SQObjectPtr paramname = makeString(paramNode->token);
             funcstate->AddParameter(paramname);
         }
@@ -414,8 +427,8 @@ public:
         _fs = funcstate;
 
         // body
-        assert(ast.nodes[2]->name == "Statement");
-        Statement(*ast.nodes[2].get(), false);
+        assert(ast.nodes[1]->name == "Statement");
+        Statement(*ast.nodes[1].get(), false);
 
         //funcstate->AddLineInfos(_lex._prevtoken == _SC('\n')?_lex._lasttokenline:_lex._currentline, _lineinfo, true);
         funcstate->AddInstruction(_OP_RETURN, -1);
@@ -430,8 +443,6 @@ public:
         _fs->PopChildState();
 
         _fs->AddInstruction(_OP_CLOSURE, _fs->PushTarget(), _fs->_functions.size() - 1, 0);
-        _fs->PopTarget();
-        _fs->PushLocalVariable(varname);
     }
 
 
@@ -612,6 +623,45 @@ public:
             //unsigned char flags = isstatic ? NEW_SLOT_STATIC_FLAG : 0;
             SQInteger table = tblPos ; // _fs->TopTarget(); //<<BECAUSE OF THIS NO COMMON EMIT FUNC IS POSSIBLE
             _fs->AddInstruction(_OP_NEWSLOT, 0xFF, table, key, val);
+        }
+    }
+
+    void ClassInit(const Ast &ast) {
+        const auto &extends = ast.nodes[0];
+        assert(extends->name == "ClassExtends");
+
+        SQInteger base = -1;
+        if (!extends->nodes.empty()) {
+            processNode(extends);
+            base = _fs->PopTarget();
+        }
+        SQInteger classPos = _fs->PushTarget();
+        _fs->AddInstruction(_OP_NEWOBJ, classPos, base, 0, NOT_CLASS);
+        for (size_t i=1; i<ast.nodes.size(); ++i) {
+            const auto &node = ast.nodes[i];
+            assert(node->name == "ClassInitItem");
+
+            if (node->nodes[0]->name == "IDENTIFIER") { // id = value OR // function foo() {}
+                assert(node->nodes.size() == 2);
+                SQObjectPtr key = makeString(node->nodes[0]->token);
+                _fs->AddInstruction(_OP_LOAD, _fs->PushTarget(), _fs->GetConstant(key));
+                if (node->nodes[1]->name == "FuncDecl")
+                    FuncDecl(*node->nodes[1].get(), key);
+                else
+                    processNode(node->nodes[1]);
+            } else if (node->nodes[0]->name == "Expression") { // ["id"] = value
+                processNode(node);
+            } else if (node->nodes[0]->name == "Constructor") {
+                SQObjectPtr key = _fs->CreateString("constructor", 11);
+                _fs->AddInstruction(_OP_LOAD, _fs->PushTarget(), _fs->GetConstant(key));
+                FuncDecl(*node->nodes[0]->nodes[0].get(), key);
+            }
+
+            SQInteger val = _fs->PopTarget();
+            SQInteger key = _fs->PopTarget();
+            //unsigned char flags = isstatic ? NEW_SLOT_STATIC_FLAG : 0;
+            //SQInteger table = classPos ; // _fs->TopTarget(); //<<BECAUSE OF THIS NO COMMON EMIT FUNC IS POSSIBLE
+            _fs->AddInstruction(_OP_NEWSLOTA, 0xFF, classPos, key, val);
         }
     }
 
@@ -866,7 +916,10 @@ public:
             Factor(ast);
         else if (ast.name == "LocalFuncDeclStmt")
             LocalFuncDeclStmt(ast);
-        else if (ast.name == "PrefixedExpr")
+        else if (ast.name == "FuncDecl") {
+            //FuncDecl(ast);
+            Error(_SC("FuncDecl should be called directly"));
+        } else if (ast.name == "PrefixedExpr")
             PrefixedExpr(ast);
         else if (ast.name == "SlotGet" || ast.name == "SlotNamedGet" || ast.name == "FunctionCall")
             Error(_SC("'%s' should be processed from PrefixedExpr node"), ast.name.c_str());
@@ -878,6 +931,8 @@ public:
             ArrayInit(ast);
         else if (ast.name == "TableInit")
             TableInit(ast);
+        else if (ast.name == "ClassInit")
+            ClassInit(ast);
         else if (ast.name == "IfStmt")
             IfStmt(ast);
         else if (ast.name == "ForStmt")

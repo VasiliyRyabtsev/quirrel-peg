@@ -11,10 +11,14 @@ static const char *grammar = R"(
     BlockStmt <- '{' Statements '}'
     BreakStmt <- 'break'
     ContinueStmt <- 'continue'
-    LocalDeclStatement <- 'function' LocalFuncDeclStmt / LocalVarsDeclStmt
+
+    LocalDeclStatement <- 'function' LocalFuncDeclStmt / LocalVarsDeclStmt / 'class' LocalClassDeclStmt
     LocalVarDeclStmt <- IDENTIFIER '=' Expression / IDENTIFIER
     LocalVarsDeclStmt <- LocalVarDeclStmt (',' LocalVarDeclStmt)*
-    LocalFuncDeclStmt <- IDENTIFIER '(' FuncParams ')' Statement
+    LocalFuncDeclStmt <- IDENTIFIER FuncDecl
+    LocalClassDeclStmt <- IDENTIFIER ClassInit
+    
+    FuncDecl <- '(' FuncParams ')' Statement
     FuncParams <- IDENTIFIER? (',' IDENTIFIER)*
     Expression <- BinaryOpExpr / PrefixedExpr
     BinaryOpExpr <- PrefixedExpr (BINARY_OP PrefixedExpr)* {
@@ -33,7 +37,7 @@ static const char *grammar = R"(
     }
     PrefixedExpr    <- (LOADROOT RootSlotGet / Factor ) (FunctionCall / SlotGet / SlotNamedGet)*
     Factor          <- FLOAT / INTEGER / BOOLEAN / NULL / STRING_LITERAL / IDENTIFIER /
-                        ArrayInit / TableInit / UnaryOperation / '(' Expression ')'
+                        ArrayInit / TableInit / 'class' ClassInit / UnaryOperation / '(' Expression ')'
 
     UnaryOperation  <- UnaryOperator PrefixedExpr
     UnaryOperator   <- <'!' / '~' / '-' / 'typeof' / 'resume' / 'clone' >
@@ -47,6 +51,11 @@ static const char *grammar = R"(
 
     TableInit       <- '{'  (TableInitItem ','? )* '}'
     TableInitItem   <- ((IDENTIFIER / ('[' Expression ']') ) '=' Expression) / IDENTIFIER
+
+    ClassInit       <- ClassExtends '{'  (ClassInitItem ';'? )* '}'
+    ClassExtends    <- ('extends' Expression)?
+    ClassInitItem   <- ((IDENTIFIER / ('[' Expression ']') ) '=' Expression / 'function' IDENTIFIER FuncDecl / Constructor)
+    Constructor     <- 'function'? 'constructor' FuncDecl
 
     VarModifyStmt   <- IDENTIFIER VarModifyOp Expression
     VarModifyOp     <- '=' / '+=' / '-='
@@ -71,7 +80,7 @@ static const char *grammar = R"(
     BOOLEAN     <- < 'true' | 'false' >
     NULL        <- 'null'
     STRING_LITERAL <- '"' < ([^"] / '""')* > '"'
-    IDENTIFIER  <- < !KEYWORD [a-zA-Z_][a-zA-Z_0-9]* >
+    IDENTIFIER  <- < !KEYWORD [a-zA-Z_][a-zA-Z_0-9]* / 'this' >
     BINARY_OP   <- '??' / '||' / '&&' / '^' / '&' /
                     '==' / '!=' / '<=>' / '<='/ '>=' / '<<' / '>>' / '>>>' / '<' / '>' /
                     '+' / '-' / '/' / '*' / '%' /
