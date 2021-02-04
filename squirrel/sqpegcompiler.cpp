@@ -931,6 +931,28 @@ public:
     }
 
 
+    void TernarySelect(const Ast &ast) {
+        _fs->AddInstruction(_OP_JZ, _fs->PopTarget());
+        SQInteger jzpos = _fs->GetCurrentPos();
+        SQInteger trg = _fs->PushTarget();
+        processNode(ast.nodes[0]);
+        SQInteger first_exp = _fs->PopTarget();
+        if (trg != first_exp)
+            _fs->AddInstruction(_OP_MOVE, trg, first_exp);
+        SQInteger endfirstexp = _fs->GetCurrentPos();
+        _fs->AddInstruction(_OP_JMP, 0, 0);
+
+        SQInteger jmppos = _fs->GetCurrentPos();
+        processNode(ast.nodes[1]);
+        SQInteger second_exp = _fs->PopTarget();
+        if(trg != second_exp)
+            _fs->AddInstruction(_OP_MOVE, trg, second_exp);
+        _fs->SetInstructionParam(jmppos, 1, _fs->GetCurrentPos() - jmppos);
+        _fs->SetInstructionParam(jzpos, 1, endfirstexp - jzpos + 1);
+        _fs->SnoozeOpt();
+    }
+
+
     template <typename T> void processNode(const std::shared_ptr<T> &node)
     {
         processNode(*node.get());
@@ -999,6 +1021,8 @@ public:
             TryCatchStmt(ast);
         else if (ast.name == "UnaryOperation")
             UnaryOperation(ast);
+        else if (ast.name == "TernarySelect")
+            TernarySelect(ast);
         else
             processChildren(ast);
     }

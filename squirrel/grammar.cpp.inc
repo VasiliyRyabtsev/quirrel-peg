@@ -20,7 +20,7 @@ static const char *grammar = R"(
     
     FuncDecl <- '(' FuncParams ')' Statement
     FuncParams <- IDENTIFIER? (',' IDENTIFIER)*
-    Expression <- BinaryOpExpr / PrefixedExpr
+    Expression <- (BinaryOpExpr / PrefixedExpr) TernarySelect?
     BinaryOpExpr <- PrefixedExpr (BINARY_OP PrefixedExpr)* {
                             precedence
                             L ??
@@ -38,6 +38,8 @@ static const char *grammar = R"(
     PrefixedExpr    <- (LOADROOT RootSlotGet / Factor ) (FunctionCall / SlotGet / SlotNamedGet)*
     Factor          <- FLOAT / INTEGER / BOOLEAN / NULL / STRING_LITERAL / IDENTIFIER /
                         ArrayInit / TableInit / 'class' ClassInit / UnaryOperation / '(' Expression ')'
+
+    TernarySelect   <- '?' Expression ':' Expression
 
     UnaryOperation  <- UnaryOperator PrefixedExpr
     UnaryOperator   <- <'!' / '~' / '-' / 'typeof' / 'resume' / 'clone' >
