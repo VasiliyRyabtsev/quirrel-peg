@@ -1159,6 +1159,8 @@ public:
         if(setjmp(_errorjmp) == 0) {
 
             parser.log = [&](size_t line, size_t col, const std::string& msg) {
+                _src_line = int(line);
+                _src_col = int(col);
                 Error(_SC("Parse error at %d:%d: %s"), int(line), int(col), msg.c_str());
             };
 
