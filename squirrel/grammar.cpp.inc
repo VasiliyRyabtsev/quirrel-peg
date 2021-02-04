@@ -1,13 +1,15 @@
 static const char *grammar = R"(
     Statements <- Statement*
     Statement <- (
-        ReturnStatement / IfStmt / ForStmt / ForeachStmt / WhileStmt / DoWhileStmt / SwitchStmt / BlockStmt /
+        ReturnStatement / YieldStatement /
+        IfStmt / ForStmt / ForeachStmt / WhileStmt / DoWhileStmt / SwitchStmt / BlockStmt /
         BreakStmt / ContinueStmt / ThrowStmt / TryCatchStmt /
         'local' LocalDeclStatement / VarModifyStmt / SlotModifyStmt /
         Expression / ';'
     )
 
     ReturnStatement <- 'return' Expression
+    YieldStatement <- 'yield' Expression
     BlockStmt <- '{' Statements '}'
     BreakStmt <- 'break'
     ContinueStmt <- 'continue'

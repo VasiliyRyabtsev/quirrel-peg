@@ -353,6 +353,18 @@ public:
     }
 
 
+    void YieldStatement(const Ast &ast) {
+        _fs->_bgenerator = true;
+
+        SQInteger retexp = _fs->GetCurrentPos()+1;
+
+        processChildren(ast);
+
+        _fs->_returnexp = retexp;
+        _fs->AddInstruction(_OP_YIELD, 1, _fs->PopTarget(),_fs->GetStackSize());
+    }
+
+
     void BlockStatement(const Ast &ast, bool closeframe=true) {
         BEGIN_SCOPE();
         processChildren(ast);
@@ -1053,6 +1065,8 @@ public:
         }
         else if (ast.name == "ReturnStatement")
             ReturnStatement(ast);
+        else if (ast.name == "YieldStatement")
+            YieldStatement(ast);
         else if (ast.name == "BlockStmt")
             BlockStatement(ast);
         else if (ast.name == "BinaryOpExpr")
