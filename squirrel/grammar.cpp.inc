@@ -4,8 +4,8 @@ static const char *grammar = R"(
         ReturnStatement / YieldStatement /
         IfStmt / ForStmt / ForeachStmt / WhileStmt / DoWhileStmt / SwitchStmt / BlockStmt /
         BreakStmt / ContinueStmt / ThrowStmt / TryCatchStmt /
-        'local' LocalDeclStatement / VarModifyStmt / SlotModifyStmt /
-        FuncAtThisStmt / ClassAtThisStmt /
+        'local' LocalDeclStatement /
+        ThisFuncStmt / ThisClassStmt /
         Expression / ';'
     )
 
@@ -23,8 +23,10 @@ static const char *grammar = R"(
     
     FuncDecl <- '(' FuncParams ')' Statement
     FuncParams <- IDENTIFIER? (',' IDENTIFIER)*
-    Expression <- (BinaryOpExpr / PrefixedExpr) TernarySelect?
-    BinaryOpExpr <- PrefixedExpr (BINARY_OP PrefixedExpr)* {
+
+    Expression <- BinaryOpExpr
+
+    BinaryOpExpr <- ChainExpr (BINARY_OP ChainExpr)* {
                             precedence
                             L ??
                             L ||
@@ -36,9 +38,15 @@ static const char *grammar = R"(
                             L << >> >>>
                             L + -
                             L / * %
-
     }
-    PrefixedExpr    <- (LOADROOT RootSlotGet / Factor ) (FunctionCall / SlotGet / SlotNamedGet)*
+
+    ChainExpr       <- PrefixedExpr (ExprSlotSet Expression / ExprOperator Expression)? TernarySelect?
+
+    PrefixedExpr    <- (LOADROOT RootSlotGet / Factor) ExprReadSlots
+    ExprReadSlots   <- (!ExprSlotSet !ExprOperator (FunctionCall / SlotGet / SlotNamedGet))*
+    ExprOperator    <- '=' / '<-' / '+=' / '-='
+    ExprSlotSet     <- (SlotSet / SlotNamedSet) ExprOperator
+
     Factor          <- FLOAT / INTEGER / BOOLEAN / NULL / STRING_LITERAL / VERBATIM_STRING / IDENTIFIER /
                         ArrayInit / TableInit / 'class' ClassInit / UnaryOperation / '(' Expression ')'
 
@@ -50,7 +58,10 @@ static const char *grammar = R"(
     FunctionCall    <- '(' ArgValues ')'
     SlotGet         <- '[' Expression ']'
     SlotNamedGet    <- '.' IDENTIFIER
+    SlotSet         <- '[' Expression ']'
+    SlotNamedSet    <- '.' IDENTIFIER
     RootSlotGet     <- IDENTIFIER
+
     ArgValues       <- Expression? (','? Expression)*
     ArrayInit       <- '[' ArgValues ']'
 
@@ -62,16 +73,10 @@ static const char *grammar = R"(
     ClassInitItem   <- ((IDENTIFIER / ('[' Expression ']') ) '=' Expression / 'function' IDENTIFIER FuncDecl / Constructor)
     Constructor     <- 'function'? 'constructor' FuncDecl
 
-    VarModifyStmt   <- IDENTIFIER VarModifyOp Expression
-    VarModifyOp     <- '=' / '+=' / '-='
-    #SlotModifyStmt  <- PrefixedExpr '[' Expression ']' SlotModifyOp Expression
-    SlotModifyStmt  <- Factor '[' Expression ']' SlotModifyOp Expression
-    SlotModifyOp    <- '=' / '<-'
-
     IfStmt      <- 'if' '(' Expression ')' Statement ('else' Statement)?
 
     ForStmt     <- 'for' '(' ForInit ';' ForCond ';' ForAction ')' Statement
-    ForInit     <- ('local' LocalVarsDeclStmt)?
+    ForInit     <- ('local' LocalVarsDeclStmt / Expression)?
     ForCond     <- Expression?
     ForAction   <- Expression? (',' Expression)*
 
@@ -84,11 +89,11 @@ static const char *grammar = R"(
     SwitchCase  <- 'case' Expression ':' Statements
     SwitchDefault <- 'default' ':' Statements
 
-    FuncAtThisStmt <- 'function' IDENTIFIER FuncDecl
-    ClassAtThisStmt <- 'class' IDENTIFIER ClassInit
-
     ThrowStmt   <- 'throw' Expression
     TryCatchStmt <- 'try' Statement 'catch' '(' IDENTIFIER ')' Statement
+
+    ThisFuncStmt <- 'function' IDENTIFIER FuncDecl
+    ThisClassStmt <- 'class' IDENTIFIER ClassInit
 
     INTEGER     <- < [-+]? [0-9]+ >
     FLOAT       <- < [-+]?[0-9]* '.'? [0-9]+([eE][-+]?[0-9]+)? / ['-+']?[0-9]+ '.' [0-9]* >
