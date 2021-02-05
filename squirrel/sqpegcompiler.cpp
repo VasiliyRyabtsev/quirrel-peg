@@ -27,6 +27,7 @@ struct SQScope {
 };
 
 enum ExprObjType {
+    EOT_NONE,
     EOT_OBJECT,
     EOT_LOCAL,
     EOT_OUTER
@@ -259,6 +260,8 @@ public:
                 _fs->AddInstruction(_OP_SETOUTER, _fs->PushTarget(), outer_pos, tmp);
             }
             break;
+        default:
+            assert(0);
         }
     }
 
@@ -600,13 +603,12 @@ public:
     }
 
 
-    void ChainExpr(const Ast &ast) {
+    ExprObjType ChainExpr(const Ast &ast, SQInteger &outer_pos, bool skip_last_get) {
         assert(ast.nodes.size() >= 1);
         assert(ast.nodes[0]->name == "Factor" || ast.nodes[0]->name == "LOADROOT");
         size_t nNodes = ast.nodes.size();
 
         ExprObjType objType = EOT_OBJECT;
-        SQInteger outer_pos = -888;
         if (ast.nodes[0]->name == "Factor")
             objType = Factor(*ast.nodes[0], outer_pos);
         else
@@ -616,6 +618,7 @@ public:
         for (size_t i=1; i<nNodes; ++i) {
             const auto &node = *ast.nodes[i];
             bool nextIsCall = (i<nNodes-1) && ast.nodes[i+1]->name == "FunctionCall";
+            bool skipGet = nextIsCall || (skip_last_get && i==nNodes-1);
 
             if (node.name == "SlotGet" || node.name == "SlotNamedGet" || node.name == "RootSlotGet") {
                 assert(node.nodes.size() == 1);
@@ -634,7 +637,9 @@ public:
                 if (nextIsCall) {
                     assert(!needPrepCall);
                     needPrepCall = true;
-                } else {
+                }
+
+                if (!skipGet) {
                     Emit2ArgsOP(_OP_GET, flags);
                 }
                 objType = EOT_OBJECT;
@@ -675,7 +680,7 @@ public:
                     assert(target < 255);
                     _fs->AddInstruction(_OP_CALL, target, closure, stackbase, nargs);
                 }
-                objType = EOT_OBJECT;
+                objType = EOT_NONE;
             }
             else if (node.name == "SlotNamedSet" || node.name == "SlotSet") {
                 if (node.name == "SlotSet")
@@ -701,6 +706,7 @@ public:
                 }
                 else
                     Error("Operator %s is not supported", std::string(nodeOp->token).c_str());
+                objType = EOT_NONE;
             }
             else if (node.name == "ExprOperator") {
                 assert(i<ast.nodes.size()-1);
@@ -711,7 +717,6 @@ public:
 
                 const auto* nodeOp = &node;
                 if (nodeOp->token == "=") {
-
                     switch (objType) {
                         case EOT_LOCAL: {
                             SQInteger src = _fs->PopTarget();
@@ -737,9 +742,10 @@ public:
                 }
                 else
                     Error("Operator %s is not supported", std::string(nodeOp->token).c_str());
-
+                objType = EOT_NONE;
             }
         }
+        return objType;
     }
 
 
@@ -1193,6 +1199,34 @@ public:
     }
 
 
+    void PreIncrDecr(const Ast &ast) {
+        assert(ast.nodes.size() == 2);
+        assert(ast.nodes[1]->name == "ChainExpr");
+
+        SQInteger diff = (ast.nodes[0]->token=="--") ? -1 : 1;
+        SQInteger outer_pos = -888;
+
+        ExprObjType objType = ChainExpr(*ast.nodes[1], outer_pos, true);
+        if (objType==EOT_NONE) {
+            Error(_SC("can't '++' or '--' an expression"));
+        }
+        else if (objType==EOT_OBJECT/* || _es.etype==BASE*/) {
+            Emit2ArgsOP(_OP_INC, diff);
+        }
+        else if (objType==EOT_LOCAL) {
+            SQInteger src = _fs->TopTarget();
+            _fs->AddInstruction(_OP_INCL, src, src, 0, diff);
+
+        }
+        else if(objType==EOT_OUTER) {
+            SQInteger tmp = _fs->PushTarget();
+            _fs->AddInstruction(_OP_GETOUTER, tmp, outer_pos);
+            _fs->AddInstruction(_OP_INCL,     tmp, tmp, 0, diff);
+            _fs->AddInstruction(_OP_SETOUTER, tmp, outer_pos, tmp);
+        }
+    }
+
+
     void TernarySelect(const Ast &ast) {
         _fs->AddInstruction(_OP_JZ, _fs->PopTarget());
         SQInteger jzpos = _fs->GetCurrentPos();
@@ -1260,8 +1294,10 @@ public:
         }
         // else if (ast.name == "Expression")
         //     Expression(ast);
-        else if (ast.name == "ChainExpr")
-            ChainExpr(ast);
+        else if (ast.name == "ChainExpr") {
+            SQInteger outer_pos = -888;
+            ChainExpr(ast, outer_pos, false);
+        }
         else if (ast.name == "SlotGet" || ast.name == "SlotNamedGet" || ast.name == "FunctionCall")
             Error(_SC("'%s' should be processed from Expression node"), ast.name.c_str());
         else if (ast.name == "VarModifyStmt")
@@ -1296,6 +1332,8 @@ public:
             TryCatchStmt(ast);
         else if (ast.name == "UnaryOperation")
             UnaryOperation(ast);
+        else if (ast.name == "PreIncrDecr")
+            PreIncrDecr(ast);
         else if (ast.name == "TernarySelect")
             TernarySelect(ast);
         else if (ast.name == "FuncAtThisStmt")

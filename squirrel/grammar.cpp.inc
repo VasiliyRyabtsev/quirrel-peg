@@ -24,7 +24,7 @@ static const char *grammar = R"(
     FuncDecl <- '(' FuncParams ')' Statement
     FuncParams <- IDENTIFIER? (',' IDENTIFIER)*
 
-    Expression <- BinaryOpExpr
+    Expression <- BinaryOpExpr TernarySelect?
 
     BinaryOpExpr <- ChainExpr (BINARY_OP ChainExpr)* {
                             precedence
@@ -40,7 +40,7 @@ static const char *grammar = R"(
                             L / * %
     }
 
-    ChainExpr       <- PrefixedExpr (ExprSlotSet Expression / ExprOperator Expression)? TernarySelect?
+    ChainExpr       <- PrefixedExpr (ExprSlotSet Expression / ExprOperator Expression)?
 
     PrefixedExpr    <- (LOADROOT RootSlotGet / Factor) ExprReadSlots
     ExprReadSlots   <- (!ExprSlotSet !ExprOperator (FunctionCall / SlotGet / SlotNamedGet))*
@@ -48,12 +48,15 @@ static const char *grammar = R"(
     ExprSlotSet     <- (SlotSet / SlotNamedSet) ExprOperator
 
     Factor          <- FLOAT / INTEGER / BOOLEAN / NULL / STRING_LITERAL / VERBATIM_STRING / IDENTIFIER /
-                        ArrayInit / TableInit / 'class' ClassInit / UnaryOperation / '(' Expression ')'
+                        ArrayInit / TableInit / 'class' ClassInit / UnaryOperation / PreIncrDecr / '(' Expression ')'
 
     TernarySelect   <- '?' Expression ':' Expression
 
-    UnaryOperation  <- UnaryOperator PrefixedExpr
-    UnaryOperator   <- <'!' / '~' / '-' / 'typeof' / 'resume' / 'clone' >
+    UnaryOperation  <- UnaryOperator ChainExpr
+    UnaryOperator   <- !IncrDecrOp <'!' / '~' / '-' / 'typeof' / 'resume' / 'clone' >
+
+    PreIncrDecr     <- IncrDecrOp ChainExpr
+    IncrDecrOp      <- '++' / '--'
 
     FunctionCall    <- '(' ArgValues ')'
     SlotGet         <- '[' Expression ']'
@@ -102,10 +105,10 @@ static const char *grammar = R"(
     STRING_LITERAL <- <'"' < (!'"' .)* > '"'>
     VERBATIM_STRING <- <'@"' < (!'"' . / '""')* > '"'>
     IDENTIFIER  <- < !KEYWORD [a-zA-Z_][a-zA-Z_0-9]* / 'this' >
-    BINARY_OP   <- '??' / '||' / '&&' / '^' / '&' /
+    BINARY_OP   <- !IncrDecrOp <'??' / '||' / '&&' / '^' / '&' /
                     '==' / '!=' / '<=>' / '<='/ '>=' / '<<' / '>>' / '>>>' / '<' / '>' /
                     '+' / '-' / '/' / '*' / '%' /
-                    'in' / 'instanceof'
+                    'in' / 'instanceof'>
     LOADROOT    <- '::'
 
     KEYWORD <- 'while' / 'do' / 'if' / 'else' / 'break' / 'continue' / 'return' / 'null' / 'function' /
