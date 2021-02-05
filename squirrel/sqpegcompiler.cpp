@@ -221,11 +221,65 @@ public:
         _fs->AddInstruction(op,_fs->PushTarget(),src,key,val);
     }
 
+
     void Emit2ArgsOP(SQOpcode op, SQInteger p3 = 0) {
         SQInteger p2 = _fs->PopTarget(); //src in OP_GET
         SQInteger p1 = _fs->PopTarget(); //key in OP_GET
         _fs->AddInstruction(op,_fs->PushTarget(), p1, p2, p3);
     }
+
+
+    void EmitCompoundArith(const std::string_view &tok, ExprObjType otype, SQInteger outer_pos) {
+        /* Generate code depending on the expression type */
+        switch (otype) {
+            case EOT_LOCAL:{
+                SQInteger p2 = _fs->PopTarget(); //src in OP_GET
+                SQInteger p1 = _fs->PopTarget(); //key in OP_GET
+                _fs->PushTarget(p1);
+                //EmitCompArithLocal(tok, p1, p1, p2);
+                _fs->AddInstruction(ChooseArithOpByToken(tok),p1, p2, p1, 0);
+                _fs->SnoozeOpt();
+            }
+            break;
+        case EOT_OBJECT: {
+                SQInteger val = _fs->PopTarget();
+                SQInteger key = _fs->PopTarget();
+                SQInteger src = _fs->PopTarget();
+                /* _OP_COMPARITH mixes dest obj and source val in the arg1 */
+                _fs->AddInstruction(_OP_COMPARITH, _fs->PushTarget(), (src<<16)|val, key, ChooseCompArithCharByToken(tok));
+            }
+            break;
+        case EOT_OUTER: {
+                SQInteger val = _fs->TopTarget();
+                SQInteger tmp = _fs->PushTarget();
+                _fs->AddInstruction(_OP_GETOUTER,  tmp, outer_pos);
+                _fs->AddInstruction(ChooseArithOpByToken(tok), tmp, val, tmp, 0);
+                _fs->PopTarget();
+                _fs->PopTarget();
+                _fs->AddInstruction(_OP_SETOUTER, _fs->PushTarget(), outer_pos, tmp);
+            }
+            break;
+        }
+    }
+
+
+    SQOpcode ChooseArithOpByToken(const std::string_view &tok) {
+        if (tok == "+=" || tok == "+")  return _OP_ADD;
+        if (tok == "-=" || tok == "-")  return _OP_SUB;
+        if (tok == "*=" || tok == "*")  return _OP_MUL;
+        if (tok == "/=" || tok == "/")  return _OP_DIV;
+        if (tok == "%=" || tok == "%")  return _OP_MOD;
+
+        assert(0);
+        return _OP_ADD;
+    }
+
+
+    SQInteger ChooseCompArithCharByToken(const std::string_view &tok) {
+        assert(tok == "-=" || tok == "+=" || tok == "*=" || tok == "/=" || tok == "%=");
+        return tok[0];
+    }
+
 
     std::string unescapeString(const std::string_view& s) {
         std::string res;
@@ -635,39 +689,51 @@ public:
                 const auto &nodeOp = ast.nodes[i+1];
                 const auto &nodeVal = ast.nodes[i+2];
                 i+=2;
-                if (nodeOp->token != "=")
-                    Error("Operator %s is not supported yet", std::string(nodeOp->token).c_str());
 
                 processNode(nodeVal);
 
-                EmitDerefOp(_OP_SET);
+                if (nodeOp->token == "=")
+                    EmitDerefOp(_OP_SET);
+                else if (nodeOp->token == "+=" || nodeOp->token == "-=" || nodeOp->token == "*=" || nodeOp->token == "/=" || nodeOp->token == "%=") {
+                    EmitCompoundArith(nodeOp->token, objType, outer_pos);
+                }
+                else
+                    Error("Operator %s is not supported", std::string(nodeOp->token).c_str());
             }
             else if (node.name == "ExprOperator") {
                 assert(i<ast.nodes.size()-1);
                 const auto &nodeVal = ast.nodes[i+1];
                 i+=1;
-                if (node.token != "=")
-                    Error("Operator %s is not supported yet", std::string(node.token).c_str());
 
                 processNode(nodeVal);
 
-                switch (objType) {
-                    case EOT_LOCAL: {
-                        SQInteger src = _fs->PopTarget();
-                        SQInteger dst = _fs->TopTarget();
-                        _fs->AddInstruction(_OP_MOVE, dst, src);
-                        break;
-                    }
-                    case EOT_OBJECT:
-                        Error("Cannot apply '%s' to object", std::string(node.token).c_str());
-                        break;
-                    case EOT_OUTER: {
-                        SQInteger src = _fs->PopTarget();
-                        SQInteger dst = _fs->PushTarget();
-                        _fs->AddInstruction(_OP_SETOUTER, dst, outer_pos, src);
-                        break;
+                const auto* nodeOp = &node;
+                if (nodeOp->token == "=") {
+
+                    switch (objType) {
+                        case EOT_LOCAL: {
+                            SQInteger src = _fs->PopTarget();
+                            SQInteger dst = _fs->TopTarget();
+                            _fs->AddInstruction(_OP_MOVE, dst, src);
+                            break;
+                        }
+                        case EOT_OBJECT:
+                            Error("Cannot apply '%s' to object", std::string(node.token).c_str());
+                            break;
+                        case EOT_OUTER: {
+                            SQInteger src = _fs->PopTarget();
+                            SQInteger dst = _fs->PushTarget();
+                            _fs->AddInstruction(_OP_SETOUTER, dst, outer_pos, src);
+                            break;
+                        }
                     }
                 }
+                else if (nodeOp->token == "+=" || nodeOp->token == "-=" || nodeOp->token == "*=" || nodeOp->token == "/=" || nodeOp->token == "%=") {
+                    EmitCompoundArith(nodeOp->token, objType, outer_pos);
+                }
+                else
+                    Error("Operator %s is not supported", std::string(nodeOp->token).c_str());
+
             }
         }
     }

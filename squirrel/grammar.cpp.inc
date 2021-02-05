@@ -44,7 +44,7 @@ static const char *grammar = R"(
 
     PrefixedExpr    <- (LOADROOT RootSlotGet / Factor) ExprReadSlots
     ExprReadSlots   <- (!ExprSlotSet !ExprOperator (FunctionCall / SlotGet / SlotNamedGet))*
-    ExprOperator    <- '=' / '<-' / '+=' / '-='
+    ExprOperator    <- '=' / '<-' / '+=' / '-=' / '*=' / '/=' / '%='
     ExprSlotSet     <- (SlotSet / SlotNamedSet) ExprOperator
 
     Factor          <- FLOAT / INTEGER / BOOLEAN / NULL / STRING_LITERAL / VERBATIM_STRING / IDENTIFIER /
