@@ -694,6 +694,8 @@ public:
 
                 if (nodeOp->token == "=")
                     EmitDerefOp(_OP_SET);
+                else if (nodeOp->token == "<-")
+                    EmitDerefOp(_OP_NEWSLOT);
                 else if (nodeOp->token == "+=" || nodeOp->token == "-=" || nodeOp->token == "*=" || nodeOp->token == "/=" || nodeOp->token == "%=") {
                     EmitCompoundArith(nodeOp->token, objType, outer_pos);
                 }
@@ -728,6 +730,8 @@ public:
                         }
                     }
                 }
+                else if (nodeOp->token == "<-")
+                    Error(_SC("can't 'create' a local slot"));
                 else if (nodeOp->token == "+=" || nodeOp->token == "-=" || nodeOp->token == "*=" || nodeOp->token == "/=" || nodeOp->token == "%=") {
                     EmitCompoundArith(nodeOp->token, objType, outer_pos);
                 }
