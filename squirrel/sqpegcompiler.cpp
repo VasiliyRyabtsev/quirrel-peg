@@ -587,6 +587,20 @@ public:
     }
 
 
+    void LocalClassDeclStmt(const Ast &ast) {
+        assert(ast.nodes.size() == 2);
+        assert(ast.nodes[0]->name == "IDENTIFIER");
+        assert(ast.nodes[1]->name == "ClassInit");
+        SQObjectPtr varname = makeString(ast.nodes[0]->token);
+        CheckDuplicateLocalIdentifier(varname, _SC("Class"), false);
+
+        ClassInit(*ast.nodes[1]);
+
+        _fs->PopTarget();
+        _fs->PushLocalVariable(varname);
+    }
+
+
     void ClassAtThisStmt(const Ast &ast) {
         assert(ast.nodes[0]->name == "IDENTIFIER");
         assert(ast.nodes[1]->name == "ClassInit");
@@ -1285,6 +1299,8 @@ public:
         }
         else if (ast.name == "LocalFuncDeclStmt")
             LocalFuncDeclStmt(ast);
+        else if (ast.name == "LocalClassDeclStmt")
+            LocalClassDeclStmt(ast);
         else if (ast.name == "FuncDecl") {
             //FuncDecl(ast);
             Error(_SC("FuncDecl should be called directly"));
