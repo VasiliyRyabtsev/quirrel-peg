@@ -99,8 +99,8 @@ static const char *grammar = R"(
     FLOAT       <- < [-+]?[0-9]* '.'? [0-9]+([eE][-+]?[0-9]+)? / ['-+']?[0-9]+ '.' [0-9]* >
     BOOLEAN     <- < 'true' | 'false' >
     NULL        <- 'null'
-    STRING_LITERAL <- '"' < ([^"])* > '"'
-    VERBATIM_STRING <- '@"' < ([^"] / '""')* > '"'
+    STRING_LITERAL <- <'"' < (!'"' .)* > '"'>
+    VERBATIM_STRING <- <'@"' < (!'"' . / '""')* > '"'>
     IDENTIFIER  <- < !KEYWORD [a-zA-Z_][a-zA-Z_0-9]* / 'this' >
     BINARY_OP   <- '??' / '||' / '&&' / '^' / '&' /
                     '==' / '!=' / '<=>' / '<='/ '>=' / '<<' / '>>' / '>>>' / '<' / '>' /
