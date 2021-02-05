@@ -889,8 +889,9 @@ public:
             SQInteger val = _fs->PopTarget();
             SQInteger key = _fs->PopTarget();
             //unsigned char flags = isstatic ? NEW_SLOT_STATIC_FLAG : 0;
+            unsigned char flags = 0;
             //SQInteger table = classPos ; // _fs->TopTarget(); //<<BECAUSE OF THIS NO COMMON EMIT FUNC IS POSSIBLE
-            _fs->AddInstruction(_OP_NEWSLOTA, 0xFF, classPos, key, val);
+            _fs->AddInstruction(_OP_NEWSLOTA, flags, classPos, key, val);
         }
     }
 
