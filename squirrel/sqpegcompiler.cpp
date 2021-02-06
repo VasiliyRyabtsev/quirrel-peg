@@ -960,6 +960,13 @@ public:
         END_BREAKBLE_BLOCK(continuetrg);
     }
 
+    void ForCommaExpr(const Ast &ast) {
+        for (const auto &node : ast.nodes) {
+            assert(node->name == "Expression");
+            processNode(node);
+            _fs->PopTarget();
+        }
+    }
 
     void ForStmt(const Ast &ast) {
         assert(ast.nodes.size()==3 || ast.nodes.size()==4);
@@ -983,12 +990,7 @@ public:
 
         _fs->SnoozeOpt();
         SQInteger expstart = _fs->GetCurrentPos() + 1;
-        for (const auto &node : forActionNode.nodes) {
-            assert(node->name == "Expression");
-            processNode(node);
-            _fs->PopTarget();
-        }
-
+        processNode(forActionNode);
 
         _fs->SnoozeOpt();
         SQInteger expend = _fs->GetCurrentPos();
@@ -1335,6 +1337,8 @@ public:
             IfStmt(ast);
         else if (ast.name == "ForStmt")
             ForStmt(ast);
+        else if (ast.name == "ForCommaExpr")
+            ForCommaExpr(ast);
         else if (ast.name == "ForeachStmt")
             ForeachStmt(ast);
         else if (ast.name == "WhileStmt")

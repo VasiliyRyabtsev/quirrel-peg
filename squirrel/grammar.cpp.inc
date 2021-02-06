@@ -76,10 +76,10 @@ static const char *grammar = R"(
 
     IfStmt      <- 'if' '(' Expression ')' Statement ('else' Statement)?
 
-    ForStmt     <- 'for' '(' ForInit ';' ForCond ';' ForAction ')' Statement
-    ForInit     <- ('local' LocalVarsDeclStmt / Expression)?
+    ForStmt     <- 'for' '(' ForInit ';' ForCond ';' ForCommaExpr ')' Statement
+    ForInit     <- ('local' LocalVarsDeclStmt / ForCommaExpr)?
     ForCond     <- Expression?
-    ForAction   <- Expression? (',' Expression)*
+    ForCommaExpr<- Expression? (',' Expression)*
 
     ForeachStmt <- 'foreach' '(' IDENTIFIER (',' IDENTIFIER)? 'in' Expression ')' Statement
 
