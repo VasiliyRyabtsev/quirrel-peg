@@ -844,12 +844,16 @@ public:
                     else
                         Error(_SC("Local variable '%s' not found"), _stringval(key));
                 }
+                else if (item->nodes[1]->name == "FuncDecl")
+                    FuncDecl(*item->nodes[1], key);
+                else
+                    processNode(item->nodes[1]);
             }
-            processNode(*item);
+            else
+                processNode(*item);
 
             SQInteger val = _fs->PopTarget();
             SQInteger key = _fs->PopTarget();
-            //unsigned char flags = isstatic ? NEW_SLOT_STATIC_FLAG : 0;
             SQInteger table = tblPos ; // _fs->TopTarget(); //<<BECAUSE OF THIS NO COMMON EMIT FUNC IS POSSIBLE
             _fs->AddInstruction(_OP_NEWSLOT, 0xFF, table, key, val);
         }
