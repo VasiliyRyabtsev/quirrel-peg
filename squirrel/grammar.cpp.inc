@@ -40,12 +40,10 @@ static const char *grammar = R"(
                             L / * %
     }
 
-    ChainExpr       <- PrefixedExpr (ExprSlotSet Expression / ExprOperator Expression)?
+    ChainExpr  <- PrefixedExpr (ExprOperator Expression)?
 
-    PrefixedExpr    <- (LOADROOT RootSlotGet / Factor) ExprReadSlots
-    ExprReadSlots   <- (!ExprSlotSet !ExprOperator (FunctionCall / SlotGet / SlotNamedGet))*
-    ExprOperator    <- '=' / '<-' / '+=' / '-=' / '*=' / '/=' / '%='
-    ExprSlotSet     <- (SlotSet / SlotNamedSet) ExprOperator
+    PrefixedExpr    <- (LOADROOT RootSlotGet / Factor) (FunctionCall / SlotGet / SlotNamedGet)*
+    ExprOperator    <- '=' / '<-' / '+=' / '-='
 
     Factor          <- FLOAT / INTEGER / BOOLEAN / NULL / STRING_LITERAL / VERBATIM_STRING / IDENTIFIER /
                         ArrayInit / TableInit / 'class' ClassInit / UnaryOperation / PreIncrDecr / '(' Expression ')'

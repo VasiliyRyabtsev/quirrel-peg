@@ -398,7 +398,7 @@ public:
     }
 
 
-    ExprObjType Factor(const Ast &ast, SQInteger &outer_pos) {
+    ExprObjType Factor(const Ast &ast, bool skip_get, SQInteger &outer_pos) {
         outer_pos = -999;
         const auto& tp = ast.nodes[0]->name;
         if (tp == "IDENTIFIER") {
@@ -418,8 +418,21 @@ public:
                 _fs->AddInstruction(_OP_LOADCALLEE, _fs->PushTarget());
                 return EOT_OBJECT;
             }
-            else
-                Error(_SC("Unknown local variable '%s'"), _stringval(id));
+            //else if(IsConstant(id, constant)) {
+            else {
+                /* Handle a non-local variable, aka a field. Push the 'this' pointer on
+                * the virtual stack (always found in offset 0, so no instruction needs to
+                * be generated), and push the key next. Generate an _OP_LOAD instruction
+                * for the latter. If we are not using the variable as a dref expr, generate
+                * the _OP_GET instruction.
+                */
+                _fs->PushTarget(0);
+                _fs->AddInstruction(_OP_LOAD, _fs->PushTarget(), _fs->GetConstant(id));
+                if (!skip_get) {
+                    Emit2ArgsOP(_OP_GET);
+                }
+                return EOT_OBJECT;
+            }
         }
         else {
             processChildren(ast);
@@ -622,19 +635,27 @@ public:
         assert(ast.nodes[0]->name == "Factor" || ast.nodes[0]->name == "LOADROOT");
         size_t nNodes = ast.nodes.size();
 
-        ExprObjType objType = EOT_OBJECT;
-        if (ast.nodes[0]->name == "Factor")
-            objType = Factor(*ast.nodes[0], outer_pos);
-        else
-            processNode(*ast.nodes[0]);
+        ExprObjType objType = EOT_NONE;
+
+        printf("ChainExpr\n");
 
         bool needPrepCall = false;
-        for (size_t i=1; i<nNodes; ++i) {
+        for (size_t i=0; i<nNodes; ++i) {
             const auto &node = *ast.nodes[i];
             bool nextIsCall = (i<nNodes-1) && ast.nodes[i+1]->name == "FunctionCall";
-            bool skipGet = nextIsCall || (skip_last_get && i==nNodes-1);
+            bool nextIsOperator = (i<nNodes-1) && ast.nodes[i+1]->name == "ExprOperator";
+            bool skipGet = nextIsCall || nextIsOperator || (skip_last_get && i==nNodes-1);
 
-            if (node.name == "SlotGet" || node.name == "SlotNamedGet" || node.name == "RootSlotGet") {
+            if (i==0) {
+                printf("node[0]: %s\n", std::string(node.name).c_str());
+                if (node.name == "Factor")
+                    objType = Factor(node, skipGet, outer_pos);
+                else {
+                    processNode(node);
+                    objType = EOT_OBJECT;
+                }
+            }
+            else if (node.name == "SlotGet" || node.name == "SlotNamedGet" || node.name == "RootSlotGet") {
                 assert(node.nodes.size() == 1);
 
                 SQInteger flags = 0;
@@ -696,32 +717,6 @@ public:
                 }
                 objType = EOT_NONE;
             }
-            else if (node.name == "SlotNamedSet" || node.name == "SlotSet") {
-                if (node.name == "SlotSet")
-                    processNode(node.nodes[0]);
-                else {
-                    SQObjectPtr constant = makeString(node.nodes[0]->token);
-                    _fs->AddInstruction(_OP_LOAD, _fs->PushTarget(), _fs->GetConstant(constant));
-                }
-
-                assert(i<ast.nodes.size()-2);
-                const auto &nodeOp = ast.nodes[i+1];
-                const auto &nodeVal = ast.nodes[i+2];
-                i+=2;
-
-                processNode(nodeVal);
-
-                if (nodeOp->token == "=")
-                    EmitDerefOp(_OP_SET);
-                else if (nodeOp->token == "<-")
-                    EmitDerefOp(_OP_NEWSLOT);
-                else if (nodeOp->token == "+=" || nodeOp->token == "-=" || nodeOp->token == "*=" || nodeOp->token == "/=" || nodeOp->token == "%=") {
-                    EmitCompoundArith(nodeOp->token, objType, outer_pos);
-                }
-                else
-                    Error("Operator %s is not supported", std::string(nodeOp->token).c_str());
-                objType = EOT_NONE;
-            }
             else if (node.name == "ExprOperator") {
                 assert(i<ast.nodes.size()-1);
                 const auto &nodeVal = ast.nodes[i+1];
@@ -739,7 +734,7 @@ public:
                             break;
                         }
                         case EOT_OBJECT:
-                            Error("Cannot apply '%s' to object", std::string(node.token).c_str());
+                            EmitDerefOp(_OP_SET);
                             break;
                         case EOT_OUTER: {
                             SQInteger src = _fs->PopTarget();
@@ -749,8 +744,11 @@ public:
                         }
                     }
                 }
-                else if (nodeOp->token == "<-")
-                    Error(_SC("can't 'create' a local slot"));
+                else if (nodeOp->token == "<-") {
+                    if (objType != EOT_OBJECT)
+                        Error(_SC("can't 'create' a local slot"));
+                    EmitDerefOp(_OP_NEWSLOT);
+                }
                 else if (nodeOp->token == "+=" || nodeOp->token == "-=" || nodeOp->token == "*=" || nodeOp->token == "/=" || nodeOp->token == "%=") {
                     EmitCompoundArith(nodeOp->token, objType, outer_pos);
                 }
@@ -1366,7 +1364,7 @@ public:
         for (size_t i=0; i<ast->nodes.size(); ) {
             auto &node = ast->nodes[i];
             FlattenExpressions(node);
-            if (node->name == "ExprSlotSet" || node->name == "PrefixedExpr" || node->name == "ExprReadSlots") {
+            if (node->name == "PrefixedExpr") {
                 auto tmp = node;
                 ast->nodes.erase(ast->nodes.begin() + i);
                 ast->nodes.insert(ast->nodes.begin() + i, tmp->nodes.begin(), tmp->nodes.end());
