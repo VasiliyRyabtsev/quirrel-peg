@@ -332,106 +332,6 @@ void Interactive(HSQUIRRELVM v)
 }
 
 
-void test_peg(HSQUIRRELVM v)
-{
-    const char* code1 = R"(
-        local a = 444+1
-        return a+a-2*2
-    )";
-    const char* code2 = R"(
-        local z = 2000
-        local function a(x, y) {
-            return x+y+1000
-        }
-        return a(222, 333)+z
-    )";
-    const char* code2a = R"(
-        local z = 2000
-        local function a(x, y) {
-            return x+y+1000+z
-        }
-        return a(222, 333)
-    )";
-    const char* code2b = R"(
-        local z = 2000
-        local function a(x, y) {
-            z=x+y
-        }
-        a(222,333)
-        return z
-    )";
-    const char* code3 = R"(
-        local function a(x, y) {
-            return x+y+1000
-        }
-        return a
-    )";
-    const char* code4 = "return 1000.1 + 234. + .0234 + 50000";
-    const char* code5 = "return -1.23e-5";
-    const char* code6 = "return \"Ab\\nc\"\"deF\"";
-    const char* code7 = R"(return "Abc""deF" + 111)";
-    const char* code8 = R"(
-        local a = [1,[2,"Z"],3,null,true]
-        return a[1][1]
-    )";
-    const char* code9 = R"(
-        local a = 123
-        a = 555
-        return a
-    )";
-    const char* code10 = R"(
-        local a = [123, 456]
-        a[0] = "Zzz"
-        return a[0]
-    )";
-    const char* code11 = R"(
-        local w = "aqwe"
-        local t = {x=123, y=-567+111, w, ["z"]=111}
-        return t["w"]
-    )";
-    const char *code12 = R"(
-        ::print(123)
-        ::print("\n--------\n")
-        ::print(::max)
-    )";
-    const char *code = R"(
-        if (true)
-            ::print("True\n")
-        else
-            ::print("False\n")
-
-        if (false) {
-            ::print("False\n")
-            local z = 111
-        } else {
-            local x = 123
-            ::print("True\n")
-        }
-    )";
-    size_t len=scstrlen(code);
-    SQInteger oldtop=sq_gettop(v);
-    //if(SQ_SUCCEEDED(sq_compilebuffer(v,buffer,i,_SC("interactive console"),SQTrue))){
-    if(SQ_SUCCEEDED(sq_compilepeg(v,code,len,_SC("test code"),SQTrue))){
-        sq_pushroottable(v);
-        SQBool retval = SQTrue;
-        bool succeeded = SQ_SUCCEEDED(sq_call(v,1,retval,SQTrue));
-        printf("closure call succeeded = %d, retval = %d\n", succeeded, int(retval));
-        if (succeeded && retval) {
-            scprintf(_SC("\n"));
-            sq_pushroottable(v);
-            sq_pushstring(v,_SC("print"),-1);
-            sq_get(v,-2);
-            sq_pushroottable(v);
-            sq_push(v,-4);
-            sq_call(v,2,SQFalse,SQTrue);
-            retval=0;
-            scprintf(_SC("\n"));
-        }
-    }
-
-    sq_settop(v,oldtop);
-}
-
 int main(int argc, char* argv[])
 {
     HSQUIRRELVM v;
@@ -462,9 +362,6 @@ int main(int argc, char* argv[])
 
     sqstd_register_command_line_args(v, argc, argv);
 
-#if 0
-    test_peg(v);
-#else
     //gets arguments
     switch(getargs(v,argc,argv,&retval))
     {
@@ -476,7 +373,6 @@ int main(int argc, char* argv[])
     default:
         break;
     }
-#endif
 
     delete module_mgr;
     sq_close(v);
