@@ -416,7 +416,7 @@ public:
             }
             else if (sq_isstring(_fs->_name) && scstrcmp(_stringval(_fs->_name), _stringval(id))==0) {
                 _fs->AddInstruction(_OP_LOADCALLEE, _fs->PushTarget());
-                return EOT_OBJECT;
+                return EOT_LOCAL;
             }
             //else if(IsConstant(id, constant)) {
             else {
@@ -637,8 +637,6 @@ public:
 
         ExprObjType objType = EOT_NONE;
 
-        printf("ChainExpr\n");
-
         bool needPrepCall = false;
         for (size_t i=0; i<nNodes; ++i) {
             const auto &node = *ast.nodes[i];
@@ -647,12 +645,16 @@ public:
             bool skipGet = nextIsCall || nextIsOperator || (skip_last_get && i==nNodes-1);
 
             if (i==0) {
-                printf("node[0]: %s\n", std::string(node.name).c_str());
                 if (node.name == "Factor")
                     objType = Factor(node, skipGet, outer_pos);
                 else {
                     processNode(node);
                     objType = EOT_OBJECT;
+                }
+
+                if (nextIsCall && objType == EOT_OBJECT) {
+                    assert(!needPrepCall);
+                    needPrepCall = true;
                 }
             }
             else if (node.name == "SlotGet" || node.name == "SlotNamedGet" || node.name == "RootSlotGet") {
