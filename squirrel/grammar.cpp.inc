@@ -5,7 +5,7 @@ static const char *grammar = R"(
         IfStmt / ForStmt / ForeachStmt / WhileStmt / DoWhileStmt / SwitchStmt / BlockStmt /
         BreakStmt / ContinueStmt / ThrowStmt / TryCatchStmt /
         'local' LocalDeclStatement /
-        ThisFuncStmt / ThisClassStmt /
+        FuncAtThisStmt / ClassAtThisStmt /
         Expression / ';'
     )
 
@@ -93,8 +93,8 @@ static const char *grammar = R"(
     ThrowStmt   <- 'throw' Expression
     TryCatchStmt <- 'try' Statement 'catch' '(' IDENTIFIER ')' Statement
 
-    ThisFuncStmt <- 'function' IDENTIFIER FuncDecl
-    ThisClassStmt <- 'class' IDENTIFIER ClassInit
+    FuncAtThisStmt <- 'function' IDENTIFIER FuncDecl
+    ClassAtThisStmt <- 'class' IDENTIFIER ClassInit
 
     INTEGER     <- < [-+]? [0-9]+ >
     FLOAT       <- < [-+]?[0-9]* '.'? [0-9]+([eE][-+]?[0-9]+)? / ['-+']?[0-9]+ '.' [0-9]* >
