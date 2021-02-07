@@ -1321,6 +1321,7 @@ public:
         for (const auto &node : ast.nodes) {
             if (node->name == "StrInterpExpr") {
                 processNode(node);
+                MoveIfCurrentTargetIsLocal();
                 nargs++;
             }
         }
