@@ -549,6 +549,7 @@ public:
         assert(ast.nodes.size() == 2);
         assert(ast.nodes[0]->name == "FuncParams");
         assert(ast.nodes[1]->name == "Statement");
+        const auto &funcParamsNode = ast.nodes[0];
 
         SQFuncState *funcstate = _fs->PushChildState(_ss(_vm));
         funcstate->_name = name;
@@ -556,9 +557,28 @@ public:
         funcstate->_sourcename = _sourcename;
         funcstate->_sourcename_ptr = _sourcename_ptr;
         SQInteger defparams = 0;
-        for (const auto &paramNode : ast.nodes[0]->nodes) {
-            SQObjectPtr paramname = makeString(paramNode->token);
-            funcstate->AddParameter(paramname);
+        for (const auto &paramNode : funcParamsNode->nodes) {
+            if (paramNode->name == "FuncParam") {
+                SQObjectPtr paramname = makeString(paramNode->nodes[0]->token);
+                funcstate->AddParameter(paramname);
+            }
+            else if (paramNode->name == "FuncDefParam") {
+                SQObjectPtr paramname = makeString(paramNode->nodes[0]->token);
+                funcstate->AddParameter(paramname);
+                processNode(paramNode->nodes[1]);
+                funcstate->AddDefaultParam(_fs->TopTarget());
+                defparams++;
+            }
+            else if (paramNode->name == "VarParams") {
+                if(defparams > 0)
+                    Error(_SC("function with default parameters cannot have variable number of parameters"));
+                funcstate->AddParameter(_fs->CreateString(_SC("vargv")));
+                funcstate->_varparams = true;
+            }
+        }
+
+        for (SQInteger n = 0; n < defparams; n++) {
+            _fs->PopTarget();
         }
 
         SQFuncState *currchunk = _fs;

@@ -22,7 +22,10 @@ static const char *grammar = R"(
     LocalClassDeclStmt <- IDENTIFIER ClassInit
     
     FuncDecl <- '(' FuncParams ')' Statement
-    FuncParams <- IDENTIFIER? (',' IDENTIFIER)*
+    FuncParam <- !FuncDefParam IDENTIFIER
+    FuncDefParam <- IDENTIFIER '=' Expression
+    VarParams <- '...'
+    FuncParams <- (FuncParam ','?)* (FuncDefParam ','?)* VarParams?
 
     Expression <- BinaryOpExpr TernarySelect?
 
