@@ -499,6 +499,8 @@ public:
         else if (opStr == "%")      op = _OP_MOD;
         else if (opStr == "==")     op = _OP_EQ;
         else if (opStr == "!=")     op = _OP_NE;
+        else if (opStr == "in")     op = _OP_EXISTS;
+        else if (opStr == "instanceof")     op = _OP_INSTANCEOF;
         else if (opStr == ">")      {op = _OP_CMP; op3 = CMP_G;}
         else if (opStr == "<")      {op = _OP_CMP; op3 = CMP_L;}
         else if (opStr == ">=")     {op = _OP_CMP; op3 = CMP_GE;}
