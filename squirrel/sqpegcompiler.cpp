@@ -443,14 +443,22 @@ public:
 
 
     void ReturnStatement(const Ast &ast) {
-        SQInteger retexp = _fs->GetCurrentPos()+1;
+        if (!ast.nodes.empty()) {
+            SQInteger retexp = _fs->GetCurrentPos()+1;
 
-        processChildren(ast);
+            processChildren(ast);
 
-        if (_fs->_traps > 0)
-            _fs->AddInstruction(_OP_POPTRAP, _fs->_traps, 0);
-        _fs->_returnexp = retexp;
-        _fs->AddInstruction(_OP_RETURN, 1, _fs->PopTarget(),_fs->GetStackSize());
+            if (_fs->_traps > 0)
+                _fs->AddInstruction(_OP_POPTRAP, _fs->_traps, 0);
+            _fs->_returnexp = retexp;
+            _fs->AddInstruction(_OP_RETURN, 1, _fs->PopTarget(),_fs->GetStackSize());
+        }
+        else {
+            if (_fs->_traps > 0)
+                _fs->AddInstruction(_OP_POPTRAP, _fs->_traps, 0);
+            _fs->_returnexp = -1;
+            _fs->AddInstruction(_OP_RETURN, 0xFF, 0, _fs->GetStackSize());
+        }
     }
 
 

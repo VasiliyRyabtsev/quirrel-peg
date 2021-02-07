@@ -9,7 +9,7 @@ static const char *grammar = R"(
         Expression / ';'
     )
 
-    ReturnStatement <- 'return' Expression
+    ReturnStatement <- 'return' Expression?
     YieldStatement <- 'yield' Expression
     BlockStmt <- '{' Statements '}'
     BreakStmt <- 'break'
