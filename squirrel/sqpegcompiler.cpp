@@ -1270,6 +1270,53 @@ public:
     }
 
 
+    void StrInterp(const Ast &ast) {
+        std::string str;
+        int exprIdx = 0;
+        for (const auto &node : ast.nodes) {
+            if (node->name == "StrInterpChars") {
+                str += unescapeString(node->token);
+            } else if (node->name == "StrInterpExpr") {
+                char buf[16];
+                sprintf(buf, "{%d}", exprIdx);
+                str += buf;
+                ++exprIdx;
+            }
+        }
+
+        _fs->AddInstruction(_OP_LOAD, _fs->PushTarget(), _fs->GetConstant(_fs->CreateString(str.c_str(), str.length())));
+        _fs->AddInstruction(_OP_LOAD, _fs->PushTarget(), _fs->GetConstant(_fs->CreateString("subst", 5)));
+
+        {
+            SQInteger key     = _fs->PopTarget();  /* location of the key */
+            SQInteger table   = _fs->PopTarget();  /* location of the object */
+            SQInteger closure = _fs->PushTarget(); /* location for the closure */
+            SQInteger ttarget = _fs->PushTarget(); /* location for 'this' pointer */
+            _fs->AddInstruction(_OP_PREPCALL, closure, key, table, ttarget);
+        }
+
+        SQInteger nargs = 1;//this
+        for (const auto &node : ast.nodes) {
+            if (node->name == "StrInterpExpr") {
+                processNode(node);
+                nargs++;
+            }
+        }
+
+        for (SQInteger i = 0; i < (nargs - 1); i++)
+            _fs->PopTarget();
+
+        {
+            SQInteger stackbase = _fs->PopTarget();
+            SQInteger closure = _fs->PopTarget();
+            SQInteger target = _fs->PushTarget();
+            assert(target >= -1);
+            assert(target < 255);
+            _fs->AddInstruction(_OP_CALL, target, closure, stackbase, nargs);
+        }
+    }
+
+
     template <typename T> void processNode(const std::shared_ptr<T> &node)
     {
         processNode(*node);
@@ -1365,6 +1412,8 @@ public:
             FuncAtThisStmt(ast);
         else if (ast.name == "ClassAtThisStmt")
             ClassAtThisStmt(ast);
+        else if (ast.name == "StrInterp")
+            StrInterp(ast);
         else
             processChildren(ast);
     }

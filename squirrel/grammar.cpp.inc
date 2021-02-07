@@ -45,7 +45,7 @@ static const char *grammar = R"(
     PrefixedExpr    <- (LOADROOT RootSlotGet / Factor) (FunctionCall / SlotGet / SlotNamedGet)*
     ExprOperator    <- '=' / '<-' / '+=' / '-='
 
-    Factor          <- FLOAT / INTEGER / BOOLEAN / NULL / STRING_LITERAL / VERBATIM_STRING / IDENTIFIER /
+    Factor          <- FLOAT / INTEGER / BOOLEAN / NULL / STRING_LITERAL / VERBATIM_STRING / StrInterp / IDENTIFIER /
                         ArrayInit / TableInit / 'class' ClassInit / UnaryOperation / PreIncrDecr / '(' Expression ')'
 
     TernarySelect   <- '?' Expression ':' Expression
@@ -114,6 +114,10 @@ static const char *grammar = R"(
         'clone' / 'yield' / 'resume' / 'switch' / 'case' / 'default' / 'this' / 'class' / 'extends' /
         'constructor' / 'instanceof' / 'true' / 'false' / 'static' / 'enum' / 'const' / '__LINE__' / '__FILE__'
         / 'rawcall' / 'global' / 'not'
+
+    StrInterp        <- '$"' (StrInterpExpr / StrInterpChars)* '"'
+    StrInterpExpr    <- '{' Expression '}'
+    StrInterpChars   <- ('\\"' / !'"' !'{' .)+
 
     EOL <- '\r\n' / '\n' / '\r'
     EOF <- !.
