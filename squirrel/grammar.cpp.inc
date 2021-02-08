@@ -49,7 +49,7 @@ static const char *grammar = R"(
                             L / * %
     }
 
-    ChainExpr  <- PrefixedExpr (ExprOperator Expression)?
+    ChainExpr  <- PrefixedExpr (ExprOperator Expression / IncrDecrOp)?
 
     PrefixedExpr    <- (LOADROOT RootSlotGet / Factor) (FunctionCall / SlotGet / SlotNamedGet)*
     ExprOperator    <- '=' / '<-' / '+=' / '-='

@@ -811,7 +811,7 @@ public:
         for (size_t i=0; i<nNodes; ++i) {
             const auto &node = *ast.nodes[i];
             bool nextIsCall = (i<nNodes-1) && ast.nodes[i+1]->name == "FunctionCall";
-            bool nextIsOperator = (i<nNodes-1) && ast.nodes[i+1]->name == "ExprOperator";
+            bool nextIsOperator = (i<nNodes-1) && (ast.nodes[i+1]->name == "ExprOperator" || ast.nodes[i+1]->name == "IncrDecrOp");
             bool skipGet = nextIsCall || nextIsOperator || (skip_last_get && i==nNodes-1);
 
             if (i==0) {
@@ -926,6 +926,33 @@ public:
                 }
                 else
                     Error("Operator %s is not supported", std::string(nodeOp->token).c_str());
+                objType = EOT_NONE;
+            }
+            else if (node.name == "IncrDecrOp") {
+                SQInteger diff = (node.token=="--") ? -1 : 1;
+                switch (objType) {
+                    case EOT_NONE:
+                        Error(_SC("can't '++' or '--' an expression"));
+                        break;
+                    case EOT_OBJECT:
+                    //case BASE:
+                        Emit2ArgsOP(_OP_PINC, diff);
+                        break;
+                    case EOT_LOCAL: {
+                        SQInteger src = _fs->PopTarget();
+                        _fs->AddInstruction(_OP_PINCL, _fs->PushTarget(), src, 0, diff);
+                        break;
+                    }
+                    case EOT_OUTER: {
+                        SQInteger tmp1 = _fs->PushTarget();
+                        SQInteger tmp2 = _fs->PushTarget();
+                        _fs->AddInstruction(_OP_GETOUTER, tmp2, outer_pos);
+                        _fs->AddInstruction(_OP_PINCL,    tmp1, tmp2, 0, diff);
+                        _fs->AddInstruction(_OP_SETOUTER, tmp2, outer_pos, tmp2);
+                        _fs->PopTarget();
+                        break;
+                    }
+                }
                 objType = EOT_NONE;
             }
         }
