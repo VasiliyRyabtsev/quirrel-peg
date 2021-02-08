@@ -4,6 +4,7 @@ static const char *grammar = R"(
         ReturnStatement / YieldStatement /
         IfStmt / ForStmt / ForeachStmt / WhileStmt / DoWhileStmt / SwitchStmt / BlockStmt /
         BreakStmt / ContinueStmt / ThrowStmt / TryCatchStmt /
+        ConstStmt / EnumStmt /
         'local' LocalDeclStatement /
         FuncAtThisStmt / ClassAtThisStmt /
         Expression / ';'
@@ -20,7 +21,12 @@ static const char *grammar = R"(
     LocalVarsDeclStmt <- LocalVarDeclStmt (',' LocalVarDeclStmt)*
     LocalFuncDeclStmt <- IDENTIFIER FuncDecl
     LocalClassDeclStmt <- IDENTIFIER ClassInit
-    
+
+    ConstStmt <- ConstModifier 'const' IDENTIFIER '=' SCALAR
+    ConstModifier <- <'global'>?
+    EnumStmt <- ConstModifier 'enum' IDENTIFIER '{' EnumEntry (','? EnumEntry)* '}'
+    EnumEntry <- IDENTIFIER ('=' SCALAR)?
+
     FuncDecl <- '(' FuncParams ')' Statement
     FuncParam <- !FuncDefParam IDENTIFIER
     FuncDefParam <- IDENTIFIER '=' Expression
@@ -117,6 +123,8 @@ static const char *grammar = R"(
         'clone' / 'yield' / 'resume' / 'switch' / 'case' / 'default' / 'this' / 'class' / 'extends' /
         'constructor' / 'instanceof' / 'true' / 'false' / 'static' / 'enum' / 'const' / '__LINE__' / '__FILE__'
         / 'rawcall' / 'global' / 'not'
+
+    SCALAR <- INTEGER / FLOAT / BOOLEAN / NULL / STRING_LITERAL / VERBATIM_STRING
 
     StrInterp        <- '$"' (StrInterpExpr / StrInterpChars)* '"'
     StrInterpExpr    <- '{' Expression '}'

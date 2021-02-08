@@ -283,6 +283,32 @@ public:
         return tok[0];
     }
 
+    void EmitLoadConstInt(SQInteger value,SQInteger target)
+    {
+        if(target < 0) {
+            target = _fs->PushTarget();
+        }
+        if(value <= INT_MAX && value > INT_MIN) { //does it fit in 32 bits?
+            _fs->AddInstruction(_OP_LOADINT, target,value);
+        }
+        else {
+            _fs->AddInstruction(_OP_LOAD, target, _fs->GetNumericConstant(value));
+        }
+    }
+
+    void EmitLoadConstFloat(SQFloat value,SQInteger target)
+    {
+        if(target < 0) {
+            target = _fs->PushTarget();
+        }
+        if(sizeof(SQFloat) == sizeof(SQInt32)) {
+            _fs->AddInstruction(_OP_LOADFLOAT, target,*((SQInt32 *)&value));
+        }
+        else {
+            _fs->AddInstruction(_OP_LOAD, target, _fs->GetNumericConstant(value));
+        }
+    }
+
 
     std::string unescapeString(const std::string_view& s) {
         std::string res;
@@ -359,10 +385,22 @@ public:
     }
 
 
+    SQInteger tokenToInteger(const std::string_view &token) {
+        SQInteger n = 0;
+        std::from_chars(token.data(), token.data() + token.size(), n);
+        return n;
+    }
+
+    SQFloat tokenToFloat(const std::string_view &token) {
+        SQFloat n = 0;
+        std::from_chars(token.data(), token.data() + token.size(), n);
+        return n;
+    }
+
     void FactorPush(const Ast &ast) {
         if (ast.name == "INTEGER") {
             SQInteger target = _fs->PushTarget();
-            SQInteger value = ast.token_to_number<SQInteger>();
+            SQInteger value = tokenToInteger(ast.token);
             if (value <= INT_MAX && value > INT_MIN) //does it fit in 32 bits?
                 _fs->AddInstruction(_OP_LOADINT, target, value);
             else
@@ -370,7 +408,7 @@ public:
         }
         else if (ast.name == "FLOAT") {
             SQInteger target = _fs->PushTarget();
-            SQFloat value = ast.token_to_number<SQFloat>();
+            SQFloat value = tokenToFloat(ast.token);
             if (sizeof(SQFloat) == sizeof(SQInt32))
                 _fs->AddInstruction(_OP_LOADFLOAT, target,*((SQInt32 *)&value));
             else
@@ -403,6 +441,7 @@ public:
         const auto& tp = ast.nodes[0]->name;
         if (tp == "IDENTIFIER") {
             SQObjectPtr id = makeString(ast.nodes[0]->token);
+            SQObjectPtr constant;
 
             SQInteger pos;
             if ((pos = _fs->GetLocalVariable(id)) != -1) {// Handle a local variable (includes 'this')
@@ -418,7 +457,34 @@ public:
                 _fs->AddInstruction(_OP_LOADCALLEE, _fs->PushTarget());
                 return EOT_LOCAL;
             }
-            //else if(IsConstant(id, constant)) {
+            else if (IsConstant(id, constant)) {
+                // SQObjectPtr constval;
+                // SQObject    constid;
+                // if(sq_type(constant) == OT_TABLE) {
+                //     Expect('.');
+                //     constid = Expect(TK_IDENTIFIER);
+                //     if(!_table(constant)->Get(constid, constval)) {
+                //         constval.Null();
+                //         Error(_SC("invalid constant [%s.%s]"), _stringval(id), _stringval(constid));
+                //     }
+                // }
+                // else {
+                //     constval = constant;
+                // }
+                SQObjectPtr constval = constant;
+
+                SQInteger tgt = _fs->PushTarget();
+
+                /* generate direct or literal function depending on size */
+                SQObjectType ctype = sq_type(constval);
+                switch(ctype) {
+                    case OT_INTEGER: EmitLoadConstInt(_integer(constval), tgt); break;
+                    case OT_FLOAT: EmitLoadConstFloat(_float(constval), tgt); break;
+                    case OT_BOOL: _fs->AddInstruction(_OP_LOADBOOL, tgt, _integer(constval)); break;
+                    default: _fs->AddInstruction(_OP_LOAD, tgt, _fs->GetConstant(constval)); break;
+                }
+                return EOT_OBJECT;
+            }
             else {
                 /* Handle a non-local variable, aka a field. Push the 'this' pointer on
                 * the virtual stack (always found in offset 0, so no instruction needs to
@@ -618,7 +684,7 @@ public:
         assert(ast.nodes[0]->name == "IDENTIFIER");
         assert(ast.nodes[1]->name == "FuncDecl");
 
-        SQObject id = makeString(ast.nodes[0]->token);
+        SQObjectPtr id = makeString(ast.nodes[0]->token);
 
         _fs->PushTarget(0);
         _fs->AddInstruction(_OP_LOAD, _fs->PushTarget(), _fs->GetConstant(id));
@@ -648,7 +714,7 @@ public:
         assert(ast.nodes[0]->name == "IDENTIFIER");
         assert(ast.nodes[1]->name == "ClassInit");
 
-        SQObject id = makeString(ast.nodes[0]->token);
+        SQObjectPtr id = makeString(ast.nodes[0]->token);
 
         _fs->PushTarget(0);
         _fs->AddInstruction(_OP_LOAD, _fs->PushTarget(), _fs->GetConstant(id));
@@ -657,6 +723,80 @@ public:
 
         EmitDerefOp(_OP_NEWSLOT);
         _fs->PopTarget();
+    }
+
+    SQObject ParseScalar(const Ast &ast)
+    {
+        SQObjectPtr val;
+        if (ast.name == "INTEGER") {
+            val._type = OT_INTEGER;
+            val._unVal.nInteger = tokenToInteger(ast.token);
+        }
+        else if (ast.name == "FLOAT") {
+            val._type = OT_FLOAT;
+            val._unVal.fFloat = tokenToFloat(ast.token);
+        }
+        else if (ast.name == "STRING_LITERAL" || ast.name == "VERBATIM_STRING") {
+            val = _fs->CreateString(ast.token.data(), ast.token.length());
+        }
+        else if (ast.name == "BOOLEAN") {
+            val._type = OT_BOOL;
+            val._unVal.nInteger = (ast.token == "true") ? 1 : 0;
+        }
+        else
+            Error(_SC("scalar expected: integer, float, or string, got '%s' node"), ast.name.c_str());
+        return val;
+    }
+
+
+    SQTable* GetScopedConstsTable() {
+        assert(!_scopedconsts.empty());
+        SQObjectPtr &consts = _scopedconsts.top();
+        if (sq_type(consts) != OT_TABLE)
+            consts = SQTable::Create(_ss(_vm), 0);
+        return _table(consts);
+    }
+
+
+    void ConstStmt(const Ast &ast) {
+        bool global = ast.nodes[0]->token == "global";
+        SQObjectPtr id = makeString(ast.nodes[1]->token);
+        CheckDuplicateLocalIdentifier(id, _SC("Constant"), global);
+
+        SQObject val = ParseScalar(*ast.nodes[2]->nodes[0]);
+
+        SQTable *enums = global ? _table(_ss(_vm)->_consts) : GetScopedConstsTable();
+        enums->NewSlot(id, SQObjectPtr(val));
+    }
+
+
+    void EnumStmt(const Ast &ast) {
+        bool global = ast.nodes[0]->token == "global";
+        if (!global)
+            Error("Local enums are not supported yet");
+
+        SQObjectPtr id = makeString(ast.nodes[1]->token);
+        CheckDuplicateLocalIdentifier(id, _SC("Enum"), global);
+
+        SQObject table = _fs->CreateTable();
+        SQInteger nval = 0;
+        for (size_t i=2; i<ast.nodes.size(); ++i) {
+            const Ast &entry = *ast.nodes[i];
+            assert(entry.name == "EnumEntry");
+            assert(entry.nodes[0]->name == "IDENTIFIER");
+            SQObjectPtr key = makeString(entry.nodes[0]->token);
+            SQObjectPtr val;
+            if (entry.nodes.size()>=2) {
+                val = ParseScalar(*entry.nodes[1]->nodes[0]);
+            } else {
+                val._type = OT_INTEGER;
+                val._unVal.nInteger = nval++;
+            }
+            _table(table)->NewSlot(SQObjectPtr(key),SQObjectPtr(val));
+        }
+
+        SQTable *enums = global ? _table(_ss(_vm)->_consts) : GetScopedConstsTable();
+        enums->NewSlot(id, SQObjectPtr(table));
     }
 
 
@@ -1057,7 +1197,7 @@ public:
         //     ForeachStmt <- 'foreach' '(' IDENTIFIER (',' IDENTIFIER) 'in' Expression ')' Statement
         assert(ast.nodes.size() == 3 || ast.nodes.size() == 4);
 
-        SQObject idxname, valname;
+        SQObjectPtr idxname, valname;
         valname = makeString(ast.nodes[0]->token);
         CheckDuplicateLocalIdentifier(valname, _SC("Iterator"), false);
 
@@ -1393,6 +1533,10 @@ public:
             //PrefixedExpr(ast);
             Error(_SC("PrefixedExpr should be flattened out"));
         }
+        else if (ast.name == "ConstStmt")
+            ConstStmt(ast);
+        else if (ast.name == "EnumStmt")
+            EnumStmt(ast);
         // else if (ast.name == "Expression")
         //     Expression(ast);
         else if (ast.name == "ChainExpr") {
