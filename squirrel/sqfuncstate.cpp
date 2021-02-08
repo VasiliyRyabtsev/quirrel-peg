@@ -529,14 +529,14 @@ void SQFuncState::AddInstruction(SQInstruction &i)
     _instructions.push_back(i);
 }
 
-SQObject SQFuncState::CreateString(const SQChar *s,SQInteger len)
+SQObjectPtr SQFuncState::CreateString(const SQChar *s,SQInteger len)
 {
     SQObjectPtr ns(SQString::Create(_sharedstate,s,len));
     _table(_strings)->NewSlot(ns,(SQInteger)1);
     return ns;
 }
 
-SQObject SQFuncState::CreateTable()
+SQObjectPtr SQFuncState::CreateTable()
 {
     SQObjectPtr nt(SQTable::Create(_sharedstate,0));
     _table(_strings)->NewSlot(nt,(SQInteger)1);

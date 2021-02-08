@@ -46,8 +46,8 @@ struct SQFuncState
     SQInteger GetUpTarget(SQInteger n);
     void DiscardTarget();
     bool IsLocal(SQUnsignedInteger stkpos);
-    SQObject CreateString(const SQChar *s,SQInteger len = -1);
-    SQObject CreateTable();
+    SQObjectPtr CreateString(const SQChar *s,SQInteger len = -1);
+    SQObjectPtr CreateTable();
     bool IsConstant(const SQObject &name,SQObject &e);
     bool IsLocalConstant(const SQObject &name,SQObject &e);
     bool IsGlobalConstant(const SQObject &name,SQObject &e);
