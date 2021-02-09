@@ -561,9 +561,39 @@ public:
         }
     }
 
+    void NullCoalesce(const Ast &ast) {
+        assert(ast.nodes.size() == 3);
+
+        processNode(ast.nodes[0]);
+
+        SQInteger first_exp = _fs->PopTarget();
+        SQInteger trg = _fs->PushTarget();
+        _fs->AddInstruction(_OP_NULLCOALESCE, trg, 0, first_exp, 0);
+        SQInteger jpos = _fs->GetCurrentPos();
+        if (trg != first_exp)
+            _fs->AddInstruction(_OP_MOVE, trg, first_exp);
+
+        processNode(ast.nodes[2]);
+        _fs->SnoozeOpt();
+        SQInteger second_exp = _fs->PopTarget();
+        if(trg != second_exp)
+            _fs->AddInstruction(_OP_MOVE, trg, second_exp);
+        _fs->SnoozeOpt();
+        _fs->SetInstructionParam(jpos, 1, (_fs->GetCurrentPos() - jpos));
+    }
+
 
     void BinaryOpExpr(const Ast &ast) {
         assert(ast.nodes.size() == 3);
+        if (ast.nodes[1]->name != "BINARY_OP")
+            Error(_SC("BINARY_OP expected"));
+
+        auto opStr = ast.nodes[1]->token;
+        if (opStr == "??") {
+            NullCoalesce(ast);
+            return;
+        }
+
 
         processChildren(ast);
 
@@ -572,10 +602,7 @@ public:
         SQInteger op3 = 0;
 
         SQOpcode op;
-        if (ast.nodes[1]->name != "BINARY_OP")
-            Error(_SC("BINARY_OP expected"));
 
-        auto opStr = ast.nodes[1]->token;
         if (opStr == "+")           op = _OP_ADD;
         else if (opStr == "-")      op = _OP_SUB;
         else if (opStr == "*")      op = _OP_MUL;
