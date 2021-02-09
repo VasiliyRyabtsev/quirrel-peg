@@ -1,6 +1,7 @@
 static const char *grammar = R"(
     Statements <- Statement*
     Statement <- (
+        Directive /
         ReturnStatement / YieldStatement /
         IfStmt / ForStmt / ForeachStmt / WhileStmt / DoWhileStmt / SwitchStmt / BlockStmt /
         BreakStmt / ContinueStmt / ThrowStmt / TryCatchStmt /
@@ -132,6 +133,8 @@ static const char *grammar = R"(
     StrInterp        <- '$"' (StrInterpExpr / StrInterpChars)* '"'
     StrInterpExpr    <- '{' Expression '}'
     StrInterpChars   <- ('\\"' / !'"' !'{' .)+
+
+    Directive <- '#' <(!(EOL / EOF / ' ' / '\t') .)*>   #[ \t]* (EOL / EOF)
 
     EOL <- '\r\n' / '\n' / '\r'
     EOF <- !.
