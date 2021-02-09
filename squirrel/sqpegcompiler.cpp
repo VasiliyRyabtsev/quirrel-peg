@@ -186,6 +186,16 @@ public:
             Error(_SC("%s name '%s' conflicts with existing constant/enum"), desc, _stringval(name));
     }
 
+    SQObjectPtr generateSurrogateFunctionName(int line)
+    {
+        const SQChar * fileName = (sq_type(_sourcename) == OT_STRING) ? _stringval(_sourcename) : _SC("unknown");
+        const SQChar * rightSlash = std::max(scstrrchr(fileName, _SC('/')), scstrrchr(fileName, _SC('\\')));
+
+        SQChar buf[MAX_FUNCTION_NAME_LEN];
+        scsprintf(buf, MAX_FUNCTION_NAME_LEN, _SC("(%s:%d)"), rightSlash ? (rightSlash + 1) : fileName, line);
+        return _fs->CreateString(buf);
+    }
+
     void MoveIfCurrentTargetIsLocal() {
         SQInteger trg = _fs->TopTarget();
         if(_fs->IsLocal(trg)) {
@@ -613,18 +623,23 @@ public:
         SQObjectPtr varname = makeString(ast.nodes[0]->token);
         CheckDuplicateLocalIdentifier(varname, _SC("Function"), false);
 
-        FuncDecl(*ast.nodes[1], varname);
+        FuncDecl(*ast.nodes[1], varname, false);
 
         _fs->PopTarget();
         _fs->PushLocalVariable(varname);
     }
 
 
-    void FuncDecl(const Ast &ast, SQObject &name) {
-        assert(ast.name == "FuncDecl");
+    void FuncDecl(const Ast &ast, SQObject &name, bool lambda) {
         assert(ast.nodes.size() == 2);
         assert(ast.nodes[0]->name == "FuncParams");
-        assert(ast.nodes[1]->name == "Statement");
+        if (lambda) {
+            assert(ast.name == "LambdaDecl");
+            assert(ast.nodes[1]->name == "Expression");
+        } else {
+            assert(ast.name == "FuncDecl");
+            assert(ast.nodes[1]->name == "Statement");
+        }
         const auto &funcParamsNode = ast.nodes[0];
 
         SQFuncState *funcstate = _fs->PushChildState(_ss(_vm));
@@ -661,8 +676,15 @@ public:
         _fs = funcstate;
 
         // body
-        assert(ast.nodes[1]->name == "Statement");
-        Statement(*ast.nodes[1], false);
+        if (lambda) {
+            _fs->AddLineInfos(ast.nodes[1]->line, _lineinfo, true);
+            assert(ast.nodes[1]->name == "Expression");
+            processNode(*ast.nodes[1]);
+            _fs->AddInstruction(_OP_RETURN, 1, _fs->PopTarget());
+        } else {
+            assert(ast.nodes[1]->name == "Statement");
+            Statement(*ast.nodes[1], false);
+        }
 
         //funcstate->AddLineInfos(_lex._prevtoken == _SC('\n')?_lex._lasttokenline:_lex._currentline, _lineinfo, true);
         funcstate->AddInstruction(_OP_RETURN, -1);
@@ -676,7 +698,7 @@ public:
         _fs->_functions.push_back(func);
         _fs->PopChildState();
 
-        _fs->AddInstruction(_OP_CLOSURE, _fs->PushTarget(), _fs->_functions.size() - 1, 0);
+        _fs->AddInstruction(_OP_CLOSURE, _fs->PushTarget(), _fs->_functions.size() - 1, lambda?1:0);
     }
 
 
@@ -689,7 +711,7 @@ public:
         _fs->PushTarget(0);
         _fs->AddInstruction(_OP_LOAD, _fs->PushTarget(), _fs->GetConstant(id));
 
-        FuncDecl(*ast.nodes[1], id);
+        FuncDecl(*ast.nodes[1], id, false);
 
         EmitDerefOp(_OP_NEWSLOT);
         _fs->PopTarget();
@@ -1042,7 +1064,7 @@ public:
                         Error(_SC("Local variable '%s' not found"), _stringval(key));
                 }
                 else if (item->nodes[1]->name == "FuncDecl")
-                    FuncDecl(*item->nodes[1], key);
+                    FuncDecl(*item->nodes[1], key, false);
                 else
                     processNode(item->nodes[1]);
             }
@@ -1055,6 +1077,7 @@ public:
             _fs->AddInstruction(_OP_NEWSLOT, 0xFF, table, key, val);
         }
     }
+
 
     void ClassInit(const Ast &ast) {
         const auto &extends = ast.nodes[0];
@@ -1076,7 +1099,7 @@ public:
                 SQObjectPtr key = makeString(node->nodes[0]->token);
                 _fs->AddInstruction(_OP_LOAD, _fs->PushTarget(), _fs->GetConstant(key));
                 if (node->nodes[1]->name == "FuncDecl")
-                    FuncDecl(*node->nodes[1], key);
+                    FuncDecl(*node->nodes[1], key, false);
                 else
                     processNode(node->nodes[1]);
             } else if (node->nodes[0]->name == "Expression") { // ["id"] = value
@@ -1084,7 +1107,7 @@ public:
             } else if (node->nodes[0]->name == "Constructor") {
                 SQObjectPtr key = _fs->CreateString("constructor", 11);
                 _fs->AddInstruction(_OP_LOAD, _fs->PushTarget(), _fs->GetConstant(key));
-                FuncDecl(*node->nodes[0]->nodes[0], key);
+                FuncDecl(*node->nodes[0]->nodes[0], key, false);
             }
 
             SQInteger val = _fs->PopTarget();
@@ -1094,6 +1117,17 @@ public:
             //SQInteger table = classPos ; // _fs->TopTarget(); //<<BECAUSE OF THIS NO COMMON EMIT FUNC IS POSSIBLE
             _fs->AddInstruction(_OP_NEWSLOTA, flags, classPos, key, val);
         }
+    }
+
+
+    void FactorFunc(const Ast &ast) {
+        SQObjectPtr name;
+        if (ast.nodes[0]->name == "IDENTIFIER")
+            name = makeString(ast.nodes[0]->token);
+        else
+            name = generateSurrogateFunctionName(int(ast.line));
+        const Ast& funcNode = *ast.nodes[ast.nodes.size()-1];
+        FuncDecl(funcNode, name, funcNode.name=="LambdaDecl");
     }
 
 
@@ -1582,6 +1616,8 @@ public:
             TableInit(ast);
         else if (ast.name == "ClassInit")
             ClassInit(ast);
+        else if (ast.name == "FactorFunc")
+            FactorFunc(ast);
         else if (ast.name == "IfStmt")
             IfStmt(ast);
         else if (ast.name == "ForStmt")

@@ -32,6 +32,7 @@ static const char *grammar = R"(
     FuncDefParam <- IDENTIFIER '=' Expression
     VarParams <- '...'
     FuncParams <- (FuncParam ','?)* (FuncDefParam ','?)* VarParams?
+    LambdaDecl <- '@' '(' FuncParams ')' Expression
 
     Expression <- BinaryOpExpr TernarySelect?
 
@@ -55,7 +56,9 @@ static const char *grammar = R"(
     ExprOperator    <- '=' / '<-' / '+=' / '-='
 
     Factor          <- FLOAT / INTEGER / BOOLEAN / NULL / STRING_LITERAL / VERBATIM_STRING / StrInterp / IDENTIFIER /
-                        ArrayInit / TableInit / 'class' ClassInit / UnaryOperation / PreIncrDecr / '(' Expression ')'
+                        ArrayInit / TableInit / 'class' ClassInit / FactorFunc /
+                        UnaryOperation / PreIncrDecr / '(' Expression ')'
+    FactorFunc      <- 'function' IDENTIFIER? FuncDecl / LambdaDecl
 
     TernarySelect   <- '?' Expression ':' Expression
 
