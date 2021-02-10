@@ -1,4 +1,6 @@
-﻿//
+﻿// This file is based on cpp-peglib https://github.com/yhirose/cpp-peglib
+
+//
 //  peglib.h
 //
 //  Copyright (c) 2020 Yuji Hirose. All rights reserved.
