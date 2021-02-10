@@ -121,7 +121,7 @@ template <typename T> void call_once(OnceFlag &flag, T& func)  {
 
 inline size_t codepoint_length(const char *s8, size_t l) {
   if (l) {
-    auto b = static_cast<uint8_t>(s8[0]);
+    uint8_t b = static_cast<uint8_t>(s8[0]);
     if ((b & 0x80) == 0) {
       return 1;
     } else if ((b & 0xE0) == 0xC0 && l >= 2) {
@@ -168,14 +168,14 @@ inline size_t encode_codepoint(char32_t cp, char *buff) {
 
 inline STL::string encode_codepoint(char32_t cp) {
   char buff[4];
-  auto l = encode_codepoint(cp, buff);
+  size_t l = encode_codepoint(cp, buff);
   return STL::string(buff, l);
 }
 
 inline bool decode_codepoint(const char *s8, size_t l, size_t &bytes,
                              char32_t &cp) {
   if (l) {
-    auto b = static_cast<uint8_t>(s8[0]);
+    uint8_t b = static_cast<uint8_t>(s8[0]);
     if ((b & 0x80) == 0) {
       bytes = 1;
       cp = b;
@@ -225,7 +225,7 @@ inline STL::u32string decode(const char *s8, size_t l) {
   STL::u32string out;
   size_t i = 0;
   while (i < l) {
-    auto beg = i++;
+    size_t beg = i++;
     while (i < l && (s8[i] & 0xc0) == 0x80) {
       i++;
     }
@@ -241,7 +241,7 @@ inline STL::u32string decode(const char *s8, size_t l) {
 inline STL::string escape_characters(const char *s, size_t n) {
   STL::string str;
   for (size_t i = 0; i < n; i++) {
-    auto c = s[i];
+    char c = s[i];
     switch (c) {
     case '\n': str += "\\n"; break;
     case '\r': str += "\\r"; break;
@@ -310,7 +310,7 @@ inline STL::string resolve_escape_sequence(const char *s, size_t n) {
 
   size_t i = 0;
   while (i < n) {
-    auto ch = s[i];
+    char ch = s[i];
     if (ch == '\\') {
       i++;
       if (i == n) { throw std::runtime_error("Invalid escape sequence..."); }
@@ -381,7 +381,7 @@ public:
   Trie(const STL::vector<STL::string> &items) {
     for (const STL::string &item : items) {
       for (size_t len = 1; len <= item.size(); len++) {
-        auto last = len == item.size();
+        bool last = len == item.size();
         STL::string_view sv(item.data(), len);
         auto it = dic_.find(sv);
         if (it == dic_.end()) {
@@ -397,7 +397,7 @@ public:
 
   size_t match(const char *text, size_t text_len) const {
     size_t match_len = 0;
-    auto done = false;
+    bool done = false;
     size_t len = 1;
     while (!done && len <= text_len) {
       STL::string_view sv(text, len);
@@ -432,9 +432,9 @@ private:
  * Line information utility function
  */
 inline STL::pair<size_t, size_t> line_info(const char *start, const char *cur) {
-  auto p = start;
-  auto col_ptr = p;
-  auto no = 1;
+  const char* p = start;
+  const char* col_ptr = p;
+  size_t no = 1;
 
   while (p < cur) {
     if (*p == '\n') {
@@ -444,7 +444,7 @@ inline STL::pair<size_t, size_t> line_info(const char *start, const char *cur) {
     p++;
   }
 
-  auto col = p - col_ptr + 1;
+  size_t col = p - col_ptr + 1;
 
   return STL::make_pair(no, col);
 }
@@ -502,15 +502,15 @@ struct SemanticValues : protected STL::vector<STL::any> {
 
   // Line number and column at which the matched string is
   STL::pair<size_t, size_t> line_info() const {
-    const auto &idx = *source_line_index;
+    const STL::vector<size_t> &idx = *source_line_index;
 
-    auto cur = static_cast<size_t>(STL::distance(ss, sv_.data()));
+    size_t cur = static_cast<size_t>(STL::distance(ss, sv_.data()));
     auto it = STL::lower_bound(
         idx.begin(), idx.end(), cur,
         [](size_t element, size_t value) { return element < value; });
 
-    auto id = static_cast<size_t>(STL::distance(idx.begin(), it));
-    auto off = cur - (id == 0 ? 0 : idx[id - 1] + 1);
+    size_t id = static_cast<size_t>(STL::distance(idx.begin(), it));
+    size_t off = cur - (id == 0 ? 0 : idx[id - 1] + 1);
     return STL::make_pair(id + 1, off + 1);
   }
 
@@ -700,7 +700,7 @@ struct ErrorInfo {
           msg += "'";
         }
 
-        auto first_item = true;
+        bool first_item = true;
         size_t i = 0;
         while (i < expected_tokens.size()) {
           STL::pair<const char *, bool> pair = expected_tokens[expected_tokens.size() - i - 1];
@@ -734,9 +734,9 @@ struct ErrorInfo {
 private:
   STL::string heuristic_error_token(const char *s, size_t n,
                                     const char *error_pos) const {
-    auto len = n - STL::distance(s, error_pos);
+    ptrdiff_t len = n - STL::distance(s, error_pos);
     if (len) {
-      size_t i = 0;
+      int i = 0;
       int c = error_pos[i++];
       if (!std::ispunct(c) && !std::isspace(c)) {
         while (i < len && !std::ispunct(error_pos[i]) &&
@@ -848,8 +848,8 @@ public:
       return;
     }
 
-    auto col = a_s - s;
-    auto idx = def_count * static_cast<size_t>(col) + def_id;
+    ptrdiff_t col = a_s - s;
+    size_t idx = def_count * static_cast<size_t>(col) + def_id;
 
     if (cache_registered[idx]) {
       if (cache_success[idx]) {
@@ -974,7 +974,7 @@ public:
     size_t i = 0;
     for (const auto &ope : opes_) {
       const auto &rule = *ope;
-      auto len = rule.parse(s + i, n - i, chldsv, c, dt);
+      size_t len = rule.parse(s + i, n - i, chldsv, c, dt);
       if (fail(len)) { return len; }
       i += len;
     }
@@ -1022,7 +1022,7 @@ public:
         c.pop_capture_scope();
       });
 
-      auto len = ope->parse(s, n, chldsv, c, dt);
+      size_t len = ope->parse(s, n, chldsv, c, dt);
       if (success(len)) {
         if (!chldsv.empty()) {
           for (size_t i = 0; i < chldsv.size(); i++) {
@@ -1072,7 +1072,7 @@ public:
       c.push_capture_scope();
       auto se = make_scope_exit([&]() { c.pop_capture_scope(); });
       const auto &rule = *ope_;
-      auto len = rule.parse(s + i, n - i, vs, c, dt);
+      size_t len = rule.parse(s + i, n - i, vs, c, dt);
       if (success(len)) {
         c.shift_capture_values();
       } else {
@@ -1085,10 +1085,10 @@ public:
     while (n - i > 0 && count < max_) {
       c.push_capture_scope();
       auto se = make_scope_exit([&]() { c.pop_capture_scope(); });
-      auto save_sv_size = vs.size();
-      auto save_tok_size = vs.tokens.size();
+      size_t save_sv_size = vs.size();
+      size_t save_tok_size = vs.tokens.size();
       const auto &rule = *ope_;
-      auto len = rule.parse(s + i, n - i, vs, c, dt);
+      size_t len = rule.parse(s + i, n - i, vs, c, dt);
       if (success(len)) {
         c.shift_capture_values();
       } else {
@@ -1147,7 +1147,7 @@ public:
       c.pop_capture_scope();
     });
     const auto &rule = *ope_;
-    auto len = rule.parse(s, n, chldsv, c, dt);
+    size_t len = rule.parse(s, n, chldsv, c, dt);
     if (success(len)) {
       return 0;
     } else {
@@ -1172,7 +1172,7 @@ public:
       c.pop();
       c.pop_capture_scope();
     });
-    auto len = ope_->parse(s, n, chldsv, c, dt);
+    size_t len = ope_->parse(s, n, chldsv, c, dt);
     if (success(len)) {
       c.set_error_pos(s);
       return static_cast<size_t>(-1);
@@ -1222,16 +1222,16 @@ class CharacterClass : public Ope,
                        public STL::enable_shared_from_this<CharacterClass> {
 public:
   CharacterClass(const STL::string &s, bool negated) : negated_(negated) {
-    auto chars = decode(s.data(), s.length());
-    auto i = 0u;
+    STL::u32string chars = decode(s.data(), s.length());
+    size_t i = 0;
     while (i < chars.size()) {
       if (i + 2 < chars.size() && chars[i + 1] == '-') {
-        auto cp1 = chars[i];
-        auto cp2 = chars[i + 2];
+        char32_t cp1 = chars[i];
+        char32_t cp2 = chars[i + 2];
         ranges_.emplace_back(STL::make_pair(cp1, cp2));
         i += 3;
       } else {
-        auto cp = chars[i];
+        char32_t cp = chars[i];
         ranges_.emplace_back(STL::make_pair(cp, cp));
         i += 1;
       }
@@ -1253,7 +1253,7 @@ public:
     }
 
     char32_t cp = 0;
-    auto len = decode_codepoint(s, n, cp);
+    size_t len = decode_codepoint(s, n, cp);
 
     for (const auto &range : ranges_) {
       if (range.first <= cp && cp <= range.second) {
@@ -1303,7 +1303,7 @@ class AnyCharacter : public Ope,
 public:
   size_t parse_core(const char *s, size_t n, SemanticValues & /*vs*/,
                     Context &c, STL::any & /*dt*/) const override {
-    auto len = codepoint_length(s, n);
+    size_t len = codepoint_length(s, n);
     if (len < 1) {
       c.set_error_pos(s);
       return static_cast<size_t>(-1);
@@ -1323,7 +1323,7 @@ public:
     c.push_capture_scope();
     auto se = make_scope_exit([&]() { c.pop_capture_scope(); });
     const auto &rule = *ope_;
-    auto len = rule.parse(s, n, vs, c, dt);
+    size_t len = rule.parse(s, n, vs, c, dt);
     return len;
   }
 
@@ -1342,7 +1342,7 @@ public:
   size_t parse_core(const char *s, size_t n, SemanticValues &vs, Context &c,
                     STL::any &dt) const override {
     const auto &rule = *ope_;
-    auto len = rule.parse(s, n, vs, c, dt);
+    size_t len = rule.parse(s, n, vs, c, dt);
     if (success(len) && match_action_) { match_action_(s, len, c); }
     return len;
   }
@@ -1901,7 +1901,7 @@ struct HasEmptyElement : public Ope::Visitor {
       : refs_(refs) {}
 
   void visit(Sequence &ope) override {
-    auto save_is_empty = false;
+    bool save_is_empty = false;
     const char *save_error_s = nullptr;
     STL::string save_error_name;
     for (auto op : ope.opes_) {
@@ -2222,7 +2222,7 @@ public:
 
   Result parse(const char *s, const char *path = nullptr,
                Log log = nullptr) const {
-    auto n = strlen(s);
+    size_t n = strlen(s);
     return parse(s, n, path, log);
   }
 
@@ -2234,7 +2234,7 @@ public:
 
   Result parse(const char *s, STL::any &dt, const char *path = nullptr,
                Log log = nullptr) const {
-    auto n = strlen(s);
+    size_t n = strlen(s);
     return parse(s, n, dt, path, log);
   }
 
@@ -2244,7 +2244,7 @@ public:
                              Log log = nullptr) const {
     SemanticValues vs;
     STL::any dt;
-    auto r = parse_core(s, n, vs, dt, path, log);
+    Result r = parse_core(s, n, vs, dt, path, log);
     if (r.ret && !vs.empty() && vs.front().has_value()) {
       val = STL::any_cast<T>(vs[0]);
     }
@@ -2254,7 +2254,7 @@ public:
   template <typename T>
   Result parse_and_get_value(const char *s, T &val, const char *path = nullptr,
                              Log log = nullptr) const {
-    auto n = strlen(s);
+    size_t n = strlen(s);
     return parse_and_get_value(s, n, val, path, log);
   }
 
@@ -2263,7 +2263,7 @@ public:
                              const char *path = nullptr,
                              Log log = nullptr) const {
     SemanticValues vs;
-    auto r = parse_core(s, n, vs, dt, path, log);
+    Result r = parse_core(s, n, vs, dt, path, log);
     if (r.ret && !vs.empty() && vs.front().has_value()) {
       val = STL::any_cast<T>(vs[0]);
     }
@@ -2274,7 +2274,7 @@ public:
   Result parse_and_get_value(const char *s, STL::any &dt, T &val,
                              const char *path = nullptr,
                              Log log = nullptr) const {
-    auto n = strlen(s);
+    size_t n = strlen(s);
     return parse_and_get_value(s, n, dt, val, path, log);
   }
 
@@ -2349,7 +2349,7 @@ private:
     Context cxt(path, s, n, definition_ids_.size(), whitespaceOpe, wordOpe,
                 enablePackratParsing, tracer_enter, tracer_leave, log);
 
-    auto len = ope->parse(s, n, vs, cxt, dt);
+    size_t len = ope->parse(s, n, vs, cxt, dt);
     return Result{success(len), cxt.recovered, len, cxt.error_info};
   }
 
@@ -2386,7 +2386,7 @@ inline size_t parse_literal(const char *s, size_t n, SemanticValues &vs,
 
   call_once(init_is_word, [&]() {
     if (c.wordOpe) {
-      auto len =
+      size_t len =
           c.wordOpe->parse(lit.data(), lit.size(), dummy_vs, dummy_c, dummy_dt);
       is_word = success(len);
     }
@@ -2394,7 +2394,7 @@ inline size_t parse_literal(const char *s, size_t n, SemanticValues &vs,
 
   if (is_word) {
     NotPredicate ope(c.wordOpe);
-    auto len = ope.parse(s + i, n - i, dummy_vs, dummy_c, dummy_dt);
+    size_t len = ope.parse(s + i, n - i, dummy_vs, dummy_c, dummy_dt);
     if (fail(len)) { return len; }
     i += len;
   }
@@ -2402,7 +2402,7 @@ inline size_t parse_literal(const char *s, size_t n, SemanticValues &vs,
   // Skip whiltespace
   if (!c.in_token_boundary_count) {
     if (c.whitespaceOpe) {
-      auto len = c.whitespaceOpe->parse(s + i, n - i, vs, c, dt);
+      size_t len = c.whitespaceOpe->parse(s + i, n - i, vs, c, dt);
       if (fail(len)) { return len; }
       i += len;
     }
@@ -2458,7 +2458,7 @@ inline size_t Ope::parse(const char *s, size_t n, SemanticValues &vs,
                          Context &c, STL::any &dt) const {
   if (c.is_traceable(*this)) {
     c.trace_enter(*this, s, n, vs, dt);
-    auto len = parse_core(s, n, vs, c, dt);
+    size_t len = parse_core(s, n, vs, c, dt);
     c.trace_leave(*this, s, n, vs, dt, len);
     return len;
   }
@@ -2468,7 +2468,7 @@ inline size_t Ope::parse(const char *s, size_t n, SemanticValues &vs,
 inline size_t Dictionary::parse_core(const char *s, size_t n,
                                      SemanticValues & /*vs*/, Context &c,
                                      STL::any & /*dt*/) const {
-  auto len = trie_.match(s, n);
+  size_t len = trie_.match(s, n);
   if (len > 0) { return len; }
   c.set_error_pos(s);
   return static_cast<size_t>(-1);
@@ -2496,7 +2496,7 @@ inline size_t TokenBoundary::parse_core(const char *s, size_t n,
 
     if (!c.in_token_boundary_count) {
       if (c.whitespaceOpe) {
-        auto l = c.whitespaceOpe->parse(s + len, n - len, vs, c, dt);
+        size_t l = c.whitespaceOpe->parse(s + len, n - len, vs, c, dt);
         if (fail(l)) { return l; }
         len += l;
       }
@@ -2514,7 +2514,7 @@ inline size_t Holder::parse_core(const char *s, size_t n, SemanticValues &vs,
   // Macro reference
   if (outer_->is_macro) {
     c.rule_stack.push_back(outer_);
-    auto len = ope_->parse(s, n, vs, c, dt);
+    size_t len = ope_->parse(s, n, vs, c, dt);
     c.rule_stack.pop_back();
     return len;
   }
@@ -2625,14 +2625,14 @@ inline STL::shared_ptr<Ope> Reference::get_core_operator() const {
 inline size_t BackReference::parse_core(const char *s, size_t n,
                                         SemanticValues &vs, Context &c,
                                         STL::any &dt) const {
-  auto size = static_cast<int>(c.capture_scope_stack_size);
-  for (auto i = size - 1; i >= 0; i--) {
-    auto index = static_cast<size_t>(i);
+  int size = static_cast<int>(c.capture_scope_stack_size);
+  for (int i = size - 1; i >= 0; i--) {
+    size_t index = static_cast<size_t>(i);
     const auto &cs = c.capture_scope_stack[index];
     if (cs.find(name_) != cs.end()) {
       const auto &lit = cs.at(name_);
       OnceFlag init_is_word;
-      auto is_word = false;
+      bool is_word = false;
       return parse_literal(s, n, vs, c, dt, lit, init_is_word, is_word, false);
     }
   }
@@ -2656,7 +2656,7 @@ inline size_t PrecedenceClimbing::parse_expression(const char *s, size_t n,
                                                    SemanticValues &vs,
                                                    Context &c, STL::any &dt,
                                                    size_t min_prec) const {
-  auto len = atom_->parse(s, n, vs, c, dt);
+  size_t len = atom_->parse(s, n, vs, c, dt);
   if (fail(len)) { return len; }
 
   STL::string tok;
@@ -2674,13 +2674,13 @@ inline size_t PrecedenceClimbing::parse_expression(const char *s, size_t n,
   };
   auto action_se = make_scope_exit([&]() { rule.action = STL::move(action); });
 
-  auto i = len;
+  size_t i = len;
   while (i < n) {
     STL::vector<STL::any> save_values(vs.begin(), vs.end());
     auto save_tokens = vs.tokens;
 
     auto chv = c.push();
-    auto chl = binop_->parse(s + i, n - i, chv, c, dt);
+    size_t chl = binop_->parse(s + i, n - i, chv, c, dt);
     c.pop();
 
     if (fail(chl)) { break; }
@@ -2735,7 +2735,7 @@ inline size_t Recovery::parse_core(const char *s, size_t n, SemanticValues &/*vs
 
   SemanticValues dummy_vs;
   STL::any dummy_dt;
-  auto len = rule.parse(s, n, dummy_vs, c, dummy_dt);
+  size_t len = rule.parse(s, n, dummy_vs, c, dummy_dt);
 
   c.log = save_log;
 
@@ -2796,9 +2796,9 @@ inline void PrecedenceClimbing::accept(Visitor &v) { v.visit(*this); }
 inline void Recovery::accept(Visitor &v) { v.visit(*this); }
 
 inline void AssignIDToDefinition::visit(Holder &ope) {
-  auto p = static_cast<void *>(ope.outer_);
+  void* p = static_cast<void *>(ope.outer_);
   if (ids.count(p)) { return; }
-  auto id = ids.size();
+  size_t id = ids.size();
   ids[p] = id;
   ope.outer_->id = id;
   ope.ope_->accept(*this);
@@ -2904,7 +2904,7 @@ inline void ReferenceChecker::visit(Reference &ope) {
 
 inline void LinkReferences::visit(Reference &ope) {
   // Check if the reference is a macro parameter
-  auto found_param = false;
+  bool found_param = false;
   for (size_t i = 0; i < params_.size(); i++) {
     const auto &param = params_[i];
     if (param == ope.name_) {
@@ -3142,9 +3142,9 @@ private:
     g["Definition"] = Action([&](const SemanticValues &vs, STL::any &dt) {
       auto &data = *STL::any_cast<Data *>(dt);
 
-      auto is_macro = vs.choice() == 0;
-      auto ignore = STL::any_cast<bool>(vs[0]);
-      auto name = STL::any_cast<STL::string>(vs[1]);
+      bool is_macro = vs.choice() == 0;
+      bool ignore = STL::any_cast<bool>(vs[0]);
+      const STL::string &name = STL::any_cast<STL::string>(vs[1]);
 
       STL::vector<STL::string> params;
       STL::shared_ptr<Ope> ope;
@@ -3161,7 +3161,7 @@ private:
         }
       }
 
-      auto &grammar = *data.grammar;
+      Grammar &grammar = *data.grammar;
       if (!grammar.count(name)) {
         auto &rule = grammar[name];
         rule <= ope;
@@ -3186,7 +3186,7 @@ private:
         return STL::any_cast<STL::shared_ptr<Ope>>(vs[0]);
       } else {
         STL::vector<STL::shared_ptr<Ope>> opes;
-        for (auto i = 0u; i < vs.size(); i++) {
+        for (size_t i = 0u; i < vs.size(); i++) {
           opes.emplace_back(STL::any_cast<STL::shared_ptr<Ope>>(vs[i]));
         }
         const STL::shared_ptr<Ope> ope =
@@ -3216,7 +3216,7 @@ private:
         ope = STL::any_cast<STL::shared_ptr<Ope>>(vs[0]);
       } else {
         assert(vs.size() == 2);
-        auto tok = STL::any_cast<char>(vs[0]);
+        char tok = STL::any_cast<char>(vs[0]);
         ope = STL::any_cast<STL::shared_ptr<Ope>>(vs[1]);
         if (tok == '&') {
           ope = apd(ope);
@@ -3233,8 +3233,8 @@ private:
         return ope;
       } else {
         assert(vs.size() == 2);
-        auto &data = *STL::any_cast<Data *>(dt);
-        const auto &ident = STL::any_cast<STL::string>(vs[1]);
+        Data &data = *STL::any_cast<Data *>(dt);
+        const STL::string &ident = STL::any_cast<STL::string>(vs[1]);
         auto label = ref(*data.grammar, ident, vs.sv().data(), false, {});
         auto recovery = rec(ref(*data.grammar, RECOVER_DEFINITION_NAME,
                                 vs.sv().data(), true, {label}));
@@ -3282,15 +3282,15 @@ private:
     g["RepetitionRange"] = Action([&](const SemanticValues &vs, STL::any) {
       switch (vs.choice()) {
       case 0: { // Number COMMA Number
-        auto min = STL::any_cast<size_t>(vs[0]);
-        auto max = STL::any_cast<size_t>(vs[1]);
+        size_t min = STL::any_cast<size_t>(vs[0]);
+        size_t max = STL::any_cast<size_t>(vs[1]);
         return STL::make_pair(min, max);
       }
       case 1: // Number COMMA
         return STL::make_pair(STL::any_cast<size_t>(vs[0]),
                          STL::numeric_limits<size_t>::max());
       case 2: { // Number
-        auto n = STL::any_cast<size_t>(vs[0]);
+        size_t n = STL::any_cast<size_t>(vs[0]);
         return STL::make_pair(n, n);
       }
       default: // COMMA Number
@@ -3303,14 +3303,14 @@ private:
     //};
 
     g["Primary"] = Action([&](const SemanticValues &vs, STL::any &dt) {
-      auto &data = *STL::any_cast<Data *>(dt);
+      Data &data = *STL::any_cast<Data *>(dt);
 
       switch (vs.choice()) {
       case 0:   // Macro Reference
       case 1: { // Reference
-        auto is_macro = vs.choice() == 0;
-        auto ignore = STL::any_cast<bool>(vs[0]);
-        const auto &ident = STL::any_cast<STL::string>(vs[1]);
+        bool is_macro = vs.choice() == 0;
+        bool ignore = STL::any_cast<bool>(vs[0]);
+        const STL::string &ident = STL::any_cast<STL::string>(vs[1]);
 
         STL::vector<STL::shared_ptr<Ope>> args;
         if (is_macro) {
@@ -3336,7 +3336,7 @@ private:
         return csc(STL::any_cast<STL::shared_ptr<Ope>>(vs[0]));
       }
       case 5: { // Capture
-        const auto &name = STL::any_cast<STL::string_view>(vs[0]);
+        const STL::string_view &name = STL::any_cast<STL::string_view>(vs[0]);
         auto ope = STL::any_cast<STL::shared_ptr<Ope>>(vs[1]);
         return cap(ope, [name](const char *a_s, size_t a_n, Context &c) {
           auto &cs = c.capture_scope_stack[c.capture_scope_stack_size - 1];
@@ -3514,7 +3514,7 @@ private:
     }
 
     STL::any dt = &data;
-    auto r = g["Grammar"].parse(s, n, dt, nullptr, log);
+    Definition::Result r = g["Grammar"].parse(s, n, dt, nullptr, log);
 
     if (!r.ret) {
       if (log) {
@@ -3532,7 +3532,7 @@ private:
     // User provided rules
     for (const auto &x : rules) {
       auto name = x.first;
-      auto ignore = false;
+      bool ignore = false;
       if (!name.empty() && name[0] == '~') {
         ignore = true;
         name.erase(0, 1);
@@ -3791,7 +3791,7 @@ struct AstOptimizer {
   template <typename T>
   STL::shared_ptr<T> optimize(STL::shared_ptr<T> original,
                               STL::shared_ptr<T> parent = nullptr) {
-    auto found =
+    bool found =
         STL::find(rules_.begin(), rules_.end(), original->name) != rules_.end();
     bool opt = mode_ ? !found : found;
 
@@ -4005,12 +4005,12 @@ public:
   }
 
   bool load_grammar(const char *s, const Rules &rules) {
-    auto n = strlen(s);
+    size_t n = strlen(s);
     return load_grammar(s, n, rules);
   }
 
   bool load_grammar(const char *s) {
-    auto n = strlen(s);
+    size_t n = strlen(s);
     return load_grammar(s, n);
   }
 
@@ -4023,7 +4023,7 @@ public:
   }
 
   bool parse(const char *s, const char *path = nullptr) const {
-    auto n = strlen(s);
+    size_t n = strlen(s);
     return parse_n(s, n, path);
   }
 
@@ -4037,7 +4037,7 @@ public:
   }
 
   bool parse(const char *s, STL::any &dt, const char *path = nullptr) const {
-    auto n = strlen(s);
+    size_t n = strlen(s);
     return parse_n(s, n, dt, path);
   }
 
@@ -4053,7 +4053,7 @@ public:
 
   template <typename T>
   bool parse(const char *s, T &val, const char *path = nullptr) const {
-    auto n = strlen(s);
+    size_t n = strlen(s);
     return parse_n(s, n, val, path);
   }
 
@@ -4071,7 +4071,7 @@ public:
   template <typename T>
   bool parse(const char *s, STL::any &dt, T &val,
              const char *path = nullptr) const {
-    auto n = strlen(s);
+    size_t n = strlen(s);
     return parse_n(s, n, dt, val, path);
   }
 
@@ -4116,7 +4116,7 @@ public:
 private:
   bool post_process(const char *s, size_t n,
                     const Definition::Result &r) const {
-    auto ret = r.ret && r.len == n;
+    bool ret = r.ret && r.len == n;
     if (log && !ret) { r.error_info.output_log(log, s, n); }
     return ret && !r.recovered;
   }
