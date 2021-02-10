@@ -2658,12 +2658,12 @@ PrecedenceClimbing::get_reference_for_binop(Context &c) const {
   if (rule_.is_macro) {
     // Reference parameter in macro
     const auto &args = c.top_args();
-    auto iarg = dynamic_cast<Reference &>(*binop_).iarg_;
-    auto arg = args[iarg];
-    return *dynamic_cast<Reference &>(*arg).rule_;
+    size_t iarg = static_cast<Reference &>(*binop_).iarg_;
+    STL::shared_ptr<Ope> arg = args[iarg];
+    return *static_cast<Reference &>(*arg).rule_;
   }
 
-  return *dynamic_cast<Reference &>(*binop_).rule_;
+  return *static_cast<Reference &>(*binop_).rule_;
 }
 
 inline size_t PrecedenceClimbing::parse_expression(const char *s, size_t n,
@@ -2745,7 +2745,7 @@ inline size_t Recovery::parse_core(const char *s, size_t n, SemanticValues &/*vs
   auto save_log = c.log;
   c.log = nullptr;
 
-  const auto &rule = dynamic_cast<Reference &>(*ope_);
+  const Reference &rule = static_cast<Reference &>(*ope_);
 
   SemanticValues dummy_vs;
   STL::any dummy_dt;
@@ -2756,13 +2756,28 @@ inline size_t Recovery::parse_core(const char *s, size_t n, SemanticValues &/*vs
   if (success(len)) {
     c.recovered = true;
     if (c.log) {
-      auto label = dynamic_cast<Reference *>(rule.args_[0].get());
-      if (label) {
+      // auto label = dynamic_cast<Reference *>(rule.args_[0].get());
+      // if (rule.args_[0].get())
+      //   assert(label);
+      // if (label) {
+      //   if (!label->rule_->error_message.empty()) {
+      //     c.error_info.message_pos = c.error_info.error_pos;
+      //     c.error_info.message = label->rule_->error_message;
+      //   }
+      // }
+
+      // No need for language-level RTTI
+      STL::shared_ptr<Ope> ope = rule.args_[0];
+      if (ope) {
+        STL::string name = TraceOpeName::get(*ope);
+        assert(name == "Reference");
+        Reference *label = static_cast<Reference *>(ope.get());
         if (!label->rule_->error_message.empty()) {
           c.error_info.message_pos = c.error_info.error_pos;
           c.error_info.message = label->rule_->error_message;
         }
       }
+
       c.error_info.output_log(c.log, c.s, c.l);
     }
   }
@@ -3456,16 +3471,16 @@ private:
                                     const PrecedenceClimbing::BinOpeInfo &info,
                                     const char *s, Log log) {
     try {
-      auto &seq = dynamic_cast<Sequence &>(*rule.get_core_operator());
-      auto atom = seq.opes_[0];
-      auto &rep = dynamic_cast<Repetition &>(*seq.opes_[1]);
-      auto &seq1 = dynamic_cast<Sequence &>(*rep.ope_);
-      auto binop = seq1.opes_[0];
-      auto atom1 = seq1.opes_[1];
+      Sequence &seq = static_cast<Sequence &>(*rule.get_core_operator());
+      STL::shared_ptr<Ope> atom = seq.opes_[0];
+      Repetition &rep = static_cast<Repetition &>(*seq.opes_[1]);
+      Sequence &seq1 = static_cast<Sequence &>(*rep.ope_);
+      STL::shared_ptr<Ope> binop = seq1.opes_[0];
+      STL::shared_ptr<Ope> atom1 = seq1.opes_[1];
 
-      auto atom_name = dynamic_cast<Reference &>(*atom).name_;
-      auto binop_name = dynamic_cast<Reference &>(*binop).name_;
-      auto atom1_name = dynamic_cast<Reference &>(*atom1).name_;
+      const STL::string &atom_name = static_cast<Reference &>(*atom).name_;
+      const STL::string &binop_name = static_cast<Reference &>(*binop).name_;
+      const STL::string &atom1_name = static_cast<Reference &>(*atom1).name_;
 
       if (!rep.is_zom() || atom_name != atom1_name || atom_name == binop_name) {
         if (log) {
