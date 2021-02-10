@@ -138,7 +138,7 @@ public:
         return false;
     }
 
-    SQObjectPtr makeString(const std::string_view &s) {
+    SQObjectPtr makeString(const STL::string_view &s) {
         return _fs->CreateString(s.data(), s.length());
     }
 
@@ -189,7 +189,7 @@ public:
     SQObjectPtr generateSurrogateFunctionName(int line)
     {
         const SQChar * fileName = (sq_type(_sourcename) == OT_STRING) ? _stringval(_sourcename) : _SC("unknown");
-        const SQChar * rightSlash = std::max(scstrrchr(fileName, _SC('/')), scstrrchr(fileName, _SC('\\')));
+        const SQChar * rightSlash = STL::max(scstrrchr(fileName, _SC('/')), scstrrchr(fileName, _SC('\\')));
 
         SQChar buf[MAX_FUNCTION_NAME_LEN];
         scsprintf(buf, MAX_FUNCTION_NAME_LEN, _SC("(%s:%d)"), rightSlash ? (rightSlash + 1) : fileName, line);
@@ -240,7 +240,7 @@ public:
     }
 
 
-    void EmitCompoundArith(const std::string_view &tok, ExprObjType otype, SQInteger outer_pos) {
+    void EmitCompoundArith(const STL::string_view &tok, ExprObjType otype, SQInteger outer_pos) {
         /* Generate code depending on the expression type */
         switch (otype) {
             case EOT_LOCAL:{
@@ -276,7 +276,7 @@ public:
     }
 
 
-    SQOpcode ChooseArithOpByToken(const std::string_view &tok) {
+    SQOpcode ChooseArithOpByToken(const STL::string_view &tok) {
         if (tok == "+=" || tok == "+")  return _OP_ADD;
         if (tok == "-=" || tok == "-")  return _OP_SUB;
         if (tok == "*=" || tok == "*")  return _OP_MUL;
@@ -288,7 +288,7 @@ public:
     }
 
 
-    SQInteger ChooseCompArithCharByToken(const std::string_view &tok) {
+    SQInteger ChooseCompArithCharByToken(const STL::string_view &tok) {
         assert(tok == "-=" || tok == "+=" || tok == "*=" || tok == "/=" || tok == "%=");
         return tok[0];
     }
@@ -320,8 +320,8 @@ public:
     }
 
 
-    std::string unescapeString(const std::string_view& s) {
-        std::string res;
+    STL::string unescapeString(const STL::string_view& s) {
+        STL::string res;
         res.reserve(s.length()+1);
 
 #define APPEND_CHAR(c) res.append(1, c)
@@ -353,8 +353,8 @@ public:
         return res;
     }
 
-    std::string unescapeVerbatimString(const std::string_view& s) {
-        std::string res;
+    STL::string unescapeVerbatimString(const STL::string_view& s) {
+        STL::string res;
         res.reserve(s.length()+1);
 
 #define APPEND_CHAR(c) res.append(1, c)
@@ -395,15 +395,25 @@ public:
     }
 
 
-    SQInteger tokenToInteger(const std::string_view &token) {
+    SQInteger tokenToInteger(const STL::string_view &token) {
         SQInteger n = 0;
-        std::from_chars(token.data(), token.data() + token.size(), n);
+        //STL::from_chars(token.data(), token.data() + token.size(), n);
+        for (char c : token) {
+            n = n*10+(c-'0');
+        }
+
         return n;
     }
 
-    SQFloat tokenToFloat(const std::string_view &token) {
+    SQFloat tokenToFloat(const STL::string_view &token) {
         SQFloat n = 0;
-        std::from_chars(token.data(), token.data() + token.size(), n);
+        //STL::from_chars(token.data(), token.data() + token.size(), n);
+        STL::string s(token);
+        #if SQUSEDOUBLE
+            n = strtod(s.c_str(), nullptr);
+        #else
+            n = strtof(s.c_str(), nullptr);
+        #endif
         return n;
     }
 
@@ -431,11 +441,11 @@ public:
             _fs->AddInstruction(_OP_LOADNULLS, _fs->PushTarget(), 1);
         }
         else if (ast.name == "STRING_LITERAL") {
-            std::string s = unescapeString(ast.token);
+            STL::string s = unescapeString(ast.token);
             _fs->AddInstruction(_OP_LOAD, _fs->PushTarget(), _fs->GetConstant(_fs->CreateString(s.c_str(), s.length())));
         }
         else if (ast.name == "VERBATIM_STRING") {
-            std::string s =  unescapeVerbatimString(ast.token);
+            STL::string s =  unescapeVerbatimString(ast.token);
             _fs->AddInstruction(_OP_LOAD, _fs->PushTarget(), _fs->GetConstant(_fs->CreateString(s.c_str(), s.length())));
         }
         else if (ast.name == "LOADROOT") {
@@ -618,7 +628,7 @@ public:
         else if (opStr == "<=")     {op = _OP_CMP; op3 = CMP_LE;}
         else if (opStr == "<=>")    {op = _OP_CMP; op3 = CMP_3W;}
         else
-            Error(_SC("Unknown operator '%s'"), std::string(opStr).c_str());
+            Error(_SC("Unknown operator '%s'"), STL::string(opStr).c_str());
 
         _fs->AddInstruction(op, _fs->PushTarget(), op1, op2, op3);
     }
@@ -974,7 +984,7 @@ public:
                     EmitCompoundArith(nodeOp->token, objType, outer_pos);
                 }
                 else
-                    Error("Operator %s is not supported", std::string(nodeOp->token).c_str());
+                    Error("Operator %s is not supported", STL::string(nodeOp->token).c_str());
                 objType = EOT_NONE;
             }
             else if (node.name == "IncrDecrOp") {
@@ -1006,51 +1016,6 @@ public:
             }
         }
         return objType;
-    }
-
-
-    void VarModifyStmt(const Ast &ast) {
-        assert(ast.nodes.size() == 3);
-
-        SQObjectPtr id = makeString(ast.nodes[0]->token);
-        SQInteger pos;
-        bool isOuter = false;
-        if ((pos = _fs->GetLocalVariable(id)) != -1) {
-            _fs->PushTarget(pos);
-        } else if ((pos = _fs->GetOuterVariable(id)) != -1) {
-            _fs->AddInstruction(_OP_GETOUTER, _fs->PushTarget(), pos);
-            isOuter = true;
-        } else
-            Error(_SC("Unknown local variable '%s'"), _stringval(id));
-
-        if (ast.nodes[1]->token != "=")
-            Error(_SC("Only '=' is supported for now"));
-
-        processNode(ast.nodes[2]);
-
-        if (!isOuter) {
-            SQInteger src = _fs->PopTarget();
-            SQInteger dst = pos; //_fs->TopTarget();
-            _fs->AddInstruction(_OP_MOVE, dst, src);
-        } else {
-            SQInteger src = _fs->PopTarget();
-            SQInteger dst = _fs->PushTarget();
-            _fs->AddInstruction(_OP_SETOUTER, dst, pos, src);
-        }
-    }
-
-
-    void SlotModifyStmt(const Ast &ast) {
-        assert(ast.nodes.size() == 4);
-        assert(ast.nodes[2]->token == "=" || ast.nodes[2]->token == "<-");
-
-        processChildren(ast);
-
-        SQInteger val = _fs->PopTarget();
-        SQInteger key = _fs->PopTarget();
-        SQInteger src = _fs->PopTarget();
-        SQOpcode  op = ast.nodes[2]->token == "=" ? _OP_SET : _OP_NEWSLOT;
-        _fs->AddInstruction(op, _fs->PushTarget(), src, key, val);
     }
 
 
@@ -1469,7 +1434,7 @@ public:
         else if (opStr == "resume") op = _OP_RESUME;
         else if (opStr == "clone")  op = _OP_CLONE;
         else
-            Error(_SC("Unknown unary operator %s"), std::string(opStr).c_str());
+            Error(_SC("Unknown unary operator %s"), STL::string(opStr).c_str());
 
         processNode(ast.nodes[1]);
 
@@ -1529,7 +1494,7 @@ public:
 
 
     void StrInterp(const Ast &ast) {
-        std::string str;
+        STL::string str;
         int exprIdx = 0;
         for (const auto &node : ast.nodes) {
             if (node->name == "StrInterpChars") {
@@ -1576,7 +1541,7 @@ public:
     }
 
     void Directive(const Ast &ast) {
-        std::string str(ast.token);
+        STL::string str(ast.token);
         const SQChar *sval = str.c_str();
 
         if (scstrncmp(sval, _SC("pos:"), 4) == 0) {
@@ -1623,7 +1588,7 @@ public:
     }
 
 
-    template <typename T> void processNode(const std::shared_ptr<T> &node)
+    template <typename T> void processNode(const STL::shared_ptr<T> &node)
     {
         processNode(*node);
     }
@@ -1631,7 +1596,7 @@ public:
     void processNode(const Ast &ast)
     {
         //printf("%*cname = %s | token = %s\n", depth*2, ' ',
-        //    ast.name.c_str(), ast.is_token ? std::string(ast.token).c_str() : "N/A");
+        //    ast.name.c_str(), ast.is_token ? STL::string(ast.token).c_str() : "N/A");
         _src_line = int(ast.line);
         _src_col = int(ast.column);
 
@@ -1680,10 +1645,6 @@ public:
         }
         else if (ast.name == "SlotGet" || ast.name == "SlotNamedGet" || ast.name == "FunctionCall")
             Error(_SC("'%s' should be processed from Expression node"), ast.name.c_str());
-        else if (ast.name == "VarModifyStmt")
-            VarModifyStmt(ast);
-        else if (ast.name == "SlotModifyStmt")
-            SlotModifyStmt(ast);
         else if (ast.name == "ArrayInit")
             ArrayInit(ast);
         else if (ast.name == "TableInit")
@@ -1733,7 +1694,7 @@ public:
     }
 
 
-    void FlattenExpressions(std::shared_ptr<Ast> &ast) {
+    void FlattenExpressions(STL::shared_ptr<Ast> &ast) {
         for (size_t i=0; i<ast->nodes.size(); ) {
             auto &node = ast->nodes[i];
             FlattenExpressions(node);
@@ -1786,7 +1747,7 @@ public:
 
         if(setjmp(_errorjmp) == 0) {
 
-            parser.log = [&](size_t line, size_t col, const std::string& msg) {
+            parser.log = [&](size_t line, size_t col, const STL::string& msg) {
                 _src_line = int(line);
                 _src_col = int(col);
                 //Error(_SC("Parse error at %d:%d: %s"), int(line), int(col), msg.c_str());
@@ -1796,22 +1757,22 @@ public:
             parser.enable_ast();
 
             auto expr = src;
-            std::shared_ptr<Ast> ast;
+            STL::shared_ptr<Ast> ast;
             if (!parser.parse_n(expr, size_t(src_len), ast)) {
-                // std::cout << "syntax error..." << std::endl;
+                // STL::cout << "syntax error..." << STL::endl;
                 // return false;
                 Error(_SC("Syntax error"));
                 return false;
             }
 
-            //std::shared_ptr<Ast> astOpt = AstOptimizer(true).optimize(ast);
-            std::shared_ptr<Ast> astOpt = ast;
-            std::cout << ast_to_s(astOpt);
-            //std::cout << expr << " = " << eval(*ast) << std::endl;
+            //STL::shared_ptr<Ast> astOpt = AstOptimizer(true).optimize(ast);
+            STL::shared_ptr<Ast> astOpt = ast;
+            std::cout << ast_to_s(astOpt).c_str();
+            //STL::cout << expr << " = " << eval(*ast) << STL::endl;
 
             FlattenExpressions(astOpt);
             printf("\n=== Flattened: ======\n\n");
-            std::cout << ast_to_s(astOpt);
+            std::cout << ast_to_s(astOpt).c_str();
 
             processAst(*astOpt, o);
         } else {
