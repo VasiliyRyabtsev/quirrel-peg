@@ -24,7 +24,6 @@
 #include <EASTL/shared_ptr.h>
 #include <cassert>
 #include <cctype>
-#include <charconv>
 #include <cstring>
 #include <EASTL/functional.h>
 #include <EASTL/initializer_list.h>
@@ -33,7 +32,6 @@
 #include <EASTL/list.h>
 #include <EASTL/map.h>
 #include <EASTL/memory.h>
-//#include <mutex>
 #include <EASTL/set.h>
 #include <EASTL/string.h>
 #include <EASTL/string_view.h>
@@ -47,7 +45,6 @@
 #include <any>
 #include <cassert>
 #include <cctype>
-#include <charconv>
 #include <cstring>
 #include <functional>
 #include <initializer_list>
@@ -56,7 +53,6 @@
 #include <list>
 #include <map>
 #include <memory>
-#include <mutex>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -475,6 +471,18 @@ inline constexpr unsigned int operator"" _(const char *s, size_t l) {
 
 } // namespace udl
 
+template <typename Function> struct RetTypeHelper;
+
+template <class Ret>
+struct RetTypeHelper<Ret(*)()> {
+    using type = Ret;
+};
+
+template <class Ret, typename... Args>
+struct RetTypeHelper<Ret(*)(Args...)> {
+    using type = Ret;
+};
+
 /*
  * Semantic values
  */
@@ -581,21 +589,7 @@ private:
   STL::string name_;
 };
 
-/*
- * Semantic action
- */
-template <typename F, typename... Args> STL::any call(F fn, Args &&... args) {
-  using R = decltype(fn(STL::forward<Args>(args)...));
-  if constexpr (STL::is_void<R>::value) {
-    fn(STL::forward<Args>(args)...);
-    return STL::any();
-  } else if constexpr (STL::is_same<typename STL::remove_cv<R>::type,
-                                    STL::any>::value) {
-    return fn(STL::forward<Args>(args)...);
-  } else {
-    return STL::any(fn(STL::forward<Args>(args)...));
-  }
-}
+
 
 template <typename T>
 struct argument_count : argument_count<decltype(&T::operator())> {};
@@ -611,10 +605,12 @@ struct argument_count<R (C::*)(Args...) const>
 
 class Action {
 public:
+  using Fty = STL::function<STL::any(SemanticValues &vs, STL::any &dt)>;
+
   Action() = default;
   Action(Action &&rhs) = default;
-  template <typename F> Action(F fn) : fn_(make_adaptor(fn)) {}
-  template <typename F> void operator=(F fn) { fn_ = make_adaptor(fn); }
+  explicit Action(Fty fn) : fn_(fn) {}
+  void operator=(Fty fn) { fn_ = fn; }
   Action &operator=(const Action &rhs) = default;
 
   operator bool() const { return bool(fn_); }
@@ -624,16 +620,6 @@ public:
   }
 
 private:
-  using Fty = STL::function<STL::any(SemanticValues &vs, STL::any &dt)>;
-
-  template <typename F> Fty make_adaptor(F fn) {
-    if constexpr (argument_count<F>::value == 1) {
-      return [fn](auto &vs, auto & /*dt*/) { return call(fn, vs); };
-    } else {
-      return [fn](auto &vs, auto &dt) { return call(fn, vs, dt); };
-    }
-  }
-
   Fty fn_;
 };
 
@@ -3153,7 +3139,7 @@ private:
   }
 
   void setup_actions() {
-    g["Definition"] = [&](const SemanticValues &vs, STL::any &dt) {
+    g["Definition"] = Action([&](const SemanticValues &vs, STL::any &dt) {
       auto &data = *STL::any_cast<Data *>(dt);
 
       auto is_macro = vs.choice() == 0;
@@ -3192,9 +3178,10 @@ private:
       } else {
         data.duplicates.emplace_back(name, vs.sv().data());
       }
-    };
+      return STL::any();
+    });
 
-    g["Expression"] = [&](const SemanticValues &vs) {
+    g["Expression"] = Action([&](const SemanticValues &vs, STL::any &) {
       if (vs.size() == 1) {
         return STL::any_cast<STL::shared_ptr<Ope>>(vs[0]);
       } else {
@@ -3206,9 +3193,9 @@ private:
             STL::make_shared<PrioritizedChoice>(opes);
         return ope;
       }
-    };
+    });
 
-    g["Sequence"] = [&](const SemanticValues &vs) {
+    g["Sequence"] = Action([&](const SemanticValues &vs, STL::any &) {
       if (vs.empty()) {
         return npd(lit(""));
       } else if (vs.size() == 1) {
@@ -3221,9 +3208,9 @@ private:
         const STL::shared_ptr<Ope> ope = STL::make_shared<Sequence>(opes);
         return ope;
       }
-    };
+    });
 
-    g["Prefix"] = [&](const SemanticValues &vs) {
+    g["Prefix"] = Action([&](const SemanticValues &vs, STL::any &) {
       STL::shared_ptr<Ope> ope;
       if (vs.size() == 1) {
         ope = STL::any_cast<STL::shared_ptr<Ope>>(vs[0]);
@@ -3238,9 +3225,9 @@ private:
         }
       }
       return ope;
-    };
+    });
 
-    g["SuffixWithLabel"] = [&](const SemanticValues &vs, STL::any &dt) {
+    g["SuffixWithLabel"] = Action([&](const SemanticValues &vs, STL::any &dt) {
       auto ope = STL::any_cast<STL::shared_ptr<Ope>>(vs[0]);
       if (vs.size() == 1) {
         return ope;
@@ -3253,7 +3240,7 @@ private:
                                 vs.sv().data(), true, {label}));
         return cho(ope, recovery);
       }
-    };
+    });
 
     struct Loop {
       enum class Type { opt = 0, zom, oom, rep };
@@ -3261,7 +3248,7 @@ private:
       STL::pair<size_t, size_t> range;
     };
 
-    g["Suffix"] = [&](const SemanticValues &vs) {
+    g["Suffix"] = Action([&](const SemanticValues &vs, STL::any &) {
       auto ope = STL::any_cast<STL::shared_ptr<Ope>>(vs[0]);
       if (vs.size() == 1) {
         return ope;
@@ -3276,9 +3263,9 @@ private:
           return rep(ope, loop.range.first, loop.range.second);
         }
       }
-    };
+    });
 
-    g["Loop"] = [&](const SemanticValues &vs) {
+    g["Loop"] = Action([&](const SemanticValues &vs, STL::any &) {
       switch (vs.choice()) {
       case 0: // Option
         return Loop{Loop::Type::opt, STL::pair<size_t, size_t>()};
@@ -3290,9 +3277,9 @@ private:
         return Loop{Loop::Type::rep,
                     STL::any_cast<STL::pair<size_t, size_t>>(vs[0])};
       }
-    };
+    });
 
-    g["RepetitionRange"] = [&](const SemanticValues &vs) {
+    g["RepetitionRange"] = Action([&](const SemanticValues &vs, STL::any) {
       switch (vs.choice()) {
       case 0: { // Number COMMA Number
         auto min = STL::any_cast<size_t>(vs[0]);
@@ -3310,12 +3297,12 @@ private:
         return STL::make_pair(STL::numeric_limits<size_t>::min(),
                          STL::any_cast<size_t>(vs[0]));
       }
-    };
+    });
     //g["Number"] = [&](const SemanticValues &vs) {
     //  return vs.token_to_number<size_t>();
     //};
 
-    g["Primary"] = [&](const SemanticValues &vs, STL::any &dt) {
+    g["Primary"] = Action([&](const SemanticValues &vs, STL::any &dt) {
       auto &data = *STL::any_cast<Data *>(dt);
 
       switch (vs.choice()) {
@@ -3360,39 +3347,39 @@ private:
         return STL::any_cast<STL::shared_ptr<Ope>>(vs[0]);
       }
       }
-    };
+    });
 
-    g["IdentCont"] = [](const SemanticValues &vs) {
+    g["IdentCont"] = Action([](const SemanticValues &vs, STL::any &) {
       return STL::string(vs.sv().data(), vs.sv().length());
-    };
+    });
 
-    g["Dictionary"] = [](const SemanticValues &vs) {
+    g["Dictionary"] = Action([](const SemanticValues &vs, STL::any &) {
       auto items = vs.transform<STL::string>();
       return dic(items);
-    };
+    });
 
-    g["Literal"] = [](const SemanticValues &vs) {
+    g["Literal"] = Action([](const SemanticValues &vs, STL::any &) {
       const auto &tok = vs.tokens.front();
       return lit(resolve_escape_sequence(tok.data(), tok.size()));
-    };
-    g["LiteralI"] = [](const SemanticValues &vs) {
+    });
+    g["LiteralI"] = Action([](const SemanticValues &vs, STL::any &) {
       const auto &tok = vs.tokens.front();
       return liti(resolve_escape_sequence(tok.data(), tok.size()));
-    };
-    g["LiteralD"] = [](const SemanticValues &vs) {
+    });
+    g["LiteralD"] = Action([](const SemanticValues &vs, STL::any &) {
       auto &tok = vs.tokens.front();
       return resolve_escape_sequence(tok.data(), tok.size());
-    };
+    });
 
-    g["Class"] = [](const SemanticValues &vs) {
+    g["Class"] = Action([](const SemanticValues &vs, STL::any &) {
       auto ranges = vs.transform<STL::pair<char32_t, char32_t>>();
       return cls(ranges);
-    };
-    g["NegatedClass"] = [](const SemanticValues &vs) {
+    });
+    g["NegatedClass"] = Action([](const SemanticValues &vs, STL::any &) {
       auto ranges = vs.transform<STL::pair<char32_t, char32_t>>();
       return ncls(ranges);
-    };
-    g["Range"] = [](const SemanticValues &vs) {
+    });
+    g["Range"] = Action([](const SemanticValues &vs, STL::any &) {
       switch (vs.choice()) {
       case 0: {
         auto s1 = STL::any_cast<STL::string>(vs[0]);
@@ -3408,36 +3395,36 @@ private:
       }
       }
       return STL::pair<char32_t, char32_t>(0, 0);
-    };
-    g["Char"] = [](const SemanticValues &vs) {
+    });
+    g["Char"] = Action([](const SemanticValues &vs, STL::any &) {
       return resolve_escape_sequence(vs.sv().data(), vs.sv().length());
-    };
+    });
 
-    g["AND"] = [](const SemanticValues &vs) { return *vs.sv().data(); };
-    g["NOT"] = [](const SemanticValues &vs) { return *vs.sv().data(); };
-    g["QUESTION"] = [](const SemanticValues &vs) { return *vs.sv().data(); };
-    g["STAR"] = [](const SemanticValues &vs) { return *vs.sv().data(); };
-    g["PLUS"] = [](const SemanticValues &vs) { return *vs.sv().data(); };
+    g["AND"] = Action([](const SemanticValues &vs, STL::any &) { return *vs.sv().data(); });
+    g["NOT"] = Action([](const SemanticValues &vs, STL::any &) { return *vs.sv().data(); });
+    g["QUESTION"] = Action([](const SemanticValues &vs, STL::any &) { return *vs.sv().data(); });
+    g["STAR"] = Action([](const SemanticValues &vs, STL::any &) { return *vs.sv().data(); });
+    g["PLUS"] = Action([](const SemanticValues &vs, STL::any &) { return *vs.sv().data(); });
 
-    g["DOT"] = [](const SemanticValues & /*vs*/) { return dot(); };
+    g["DOT"] = Action([](const SemanticValues & /*vs*/, STL::any &) { return dot(); });
 
-    g["BeginCap"] = [](const SemanticValues &vs) { return vs.token(); };
+    g["BeginCap"] = Action([](const SemanticValues &vs, STL::any &) { return vs.token(); });
 
-    g["BackRef"] = [&](const SemanticValues &vs) {
+    g["BackRef"] = Action([&](const SemanticValues &vs, STL::any &) {
       return bkr(vs.token_to_string());
-    };
+    });
 
-    g["Ignore"] = [](const SemanticValues &vs) { return vs.size() > 0; };
+    g["Ignore"] = Action([](const SemanticValues &vs, STL::any &) { return vs.size() > 0; });
 
-    g["Parameters"] = [](const SemanticValues &vs) {
+    g["Parameters"] = Action([](const SemanticValues &vs, STL::any &) {
       return vs.transform<STL::string>();
-    };
+    });
 
-    g["Arguments"] = [](const SemanticValues &vs) {
+    g["Arguments"] = Action([](const SemanticValues &vs, STL::any &) {
       return vs.transform<STL::shared_ptr<Ope>>();
-    };
+    });
 
-    g["PrecedenceClimbing"] = [](const SemanticValues &vs) {
+    g["PrecedenceClimbing"] = Action([](const SemanticValues &vs, STL::any &) {
       PrecedenceClimbing::BinOpeInfo binOpeInfo;
       size_t level = 1;
       for (auto v : vs) {
@@ -3452,19 +3439,19 @@ private:
       instruction.type = "precedence";
       instruction.data = binOpeInfo;
       return instruction;
-    };
-    g["PrecedenceInfo"] = [](const SemanticValues &vs) {
+    });
+    g["PrecedenceInfo"] = Action([](const SemanticValues &vs, STL::any &) {
       return vs.transform<STL::string_view>();
-    };
-    g["PrecedenceOpe"] = [](const SemanticValues &vs) { return vs.token(); };
-    g["PrecedenceAssoc"] = [](const SemanticValues &vs) { return vs.token(); };
+    });
+    g["PrecedenceOpe"] = Action([](const SemanticValues &vs, STL::any &) { return vs.token(); });
+    g["PrecedenceAssoc"] = Action([](const SemanticValues &vs, STL::any &) { return vs.token(); });
 
-    g["ErrorMessage"] = [](const SemanticValues &vs) {
+    g["ErrorMessage"] = Action([](const SemanticValues &vs, STL::any &) {
       Instruction instruction;
       instruction.type = "message";
       instruction.data = STL::any_cast<STL::string>(vs[0]);
       return instruction;
-    };
+    });
   }
 
   bool apply_precedence_instruction(Definition &rule,
@@ -3834,14 +3821,14 @@ struct EmptyType {};
 using Ast = AstBase<EmptyType>;
 
 template <typename T = Ast> void add_ast_action(Definition &rule) {
-  rule.action = [&](const SemanticValues &vs) {
+  rule.action = [&](SemanticValues &vs, STL::any &) -> STL::any {
     auto line = vs.line_info();
 
     if (rule.is_token()) {
-      return STL::make_shared<T>(
+      return STL::any(STL::make_shared<T>(
           vs.path, line.first, line.second, rule.name.data(), vs.token(),
           STL::distance(vs.ss, vs.sv().data()), vs.sv().length(),
-          vs.choice_count(), vs.choice());
+          vs.choice_count(), vs.choice()));
     }
 
     auto ast =
@@ -3853,7 +3840,7 @@ template <typename T = Ast> void add_ast_action(Definition &rule) {
     for (auto node : ast->nodes) {
       node->parent = ast;
     }
-    return ast;
+    return STL::any(ast);
   };
 }
 
