@@ -882,12 +882,19 @@ public:
 
         ExprObjType objType = EOT_NONE;
 
+        const STL::string strNone;
+
         bool needPrepCall = false;
+        bool nextIsNullable = false;
+
         for (size_t i=0; i<nNodes; ++i) {
             const auto &node = *ast.nodes[i];
-            bool nextIsCall = (i<nNodes-1) && ast.nodes[i+1]->name == "FunctionCall";
-            bool nextIsOperator = (i<nNodes-1) && (ast.nodes[i+1]->name == "ExprOperator" || ast.nodes[i+1]->name == "IncrDecrOp");
+            const STL::string &nextNodeName = (i<nNodes-1) ? ast.nodes[i+1]->name : strNone;
+            bool nextIsCall = nextNodeName == "FunctionCall";
+            bool nextIsOperator = nextNodeName == "ExprOperator" || nextNodeName == "IncrDecrOp";
             bool skipGet = nextIsCall || nextIsOperator || (skip_last_get && i==nNodes-1);
+            if (nextNodeName == "FunctionNullCall" || nextNodeName == "SlotNullGet" || nextNodeName == "SlotNamedNullGet")
+                nextIsNullable = true;
 
             if (i==0) {
                 if (node.name == "Factor")
@@ -902,13 +909,19 @@ public:
                     needPrepCall = true;
                 }
             }
-            else if (node.name == "SlotGet" || node.name == "SlotNamedGet" || node.name == "RootSlotGet") {
+            else if (node.name == "SlotGet" || node.name == "SlotNamedGet" || node.name == "RootSlotGet" ||
+                node.name == "SlotNullGet" || node.name == "SlotNamedNullGet")
+            {
                 assert(node.nodes.size() == 1);
 
                 SQInteger flags = 0;
-                if (node.name == "SlotGet")
+                if (nextIsNullable)
+                    flags |= OP_GET_FLAG_NO_ERROR;
+
+                if (node.name == "SlotGet" || node.name == "SlotNullGet")
                     processNode(node.nodes[0]);
                 else {
+                    assert(!node.nodes[0]->token.empty());
                     SQObjectPtr constant = makeString(node.nodes[0]->token);
                     if (CanBeDefaultDelegate(constant))
                         flags |= OP_GET_FLAG_ALLOW_DEF_DELEGATE;
@@ -926,16 +939,27 @@ public:
                 }
                 objType = EOT_OBJECT;
             }
-            else if (node.name == "FunctionCall") {
+            else if (node.name == "FunctionCall" || node.name == "FunctionNullCall") {
                 assert(node.nodes.size() == 1);
+                bool nullcall = nextIsNullable;
 
                 if (needPrepCall) {
                     // member/slot function
-                    SQInteger key     = _fs->PopTarget();  /* location of the key */
-                    SQInteger table   = _fs->PopTarget();  /* location of the object */
-                    SQInteger closure = _fs->PushTarget(); /* location for the closure */
-                    SQInteger ttarget = _fs->PushTarget(); /* location for 'this' pointer */
-                    _fs->AddInstruction(_OP_PREPCALL, closure, key, table, ttarget);
+                    if (!nullcall) {
+                        SQInteger key     = _fs->PopTarget();  /* location of the key */
+                        SQInteger table   = _fs->PopTarget();  /* location of the object */
+                        SQInteger closure = _fs->PushTarget(); /* location for the closure */
+                        SQInteger ttarget = _fs->PushTarget(); /* location for 'this' pointer */
+                        _fs->AddInstruction(_OP_PREPCALL, closure, key, table, ttarget);
+                    } else {
+                        SQInteger self = _fs->GetUpTarget(1);  /* location of the object */
+                        SQInteger storedSelf = _fs->PushTarget();
+                        _fs->AddInstruction(_OP_MOVE, storedSelf, self);
+                        _fs->PopTarget();
+                        Emit2ArgsOP(_OP_GET, OP_GET_FLAG_NO_ERROR|OP_GET_FLAG_ALLOW_DEF_DELEGATE);
+                        SQInteger ttarget = _fs->PushTarget();
+                        _fs->AddInstruction(_OP_MOVE, ttarget, storedSelf);
+                    }
                     needPrepCall = false;
                 }
                 else {
@@ -960,7 +984,7 @@ public:
                     SQInteger target = _fs->PushTarget();
                     assert(target >= -1);
                     assert(target < 255);
-                    _fs->AddInstruction(_OP_CALL, target, closure, stackbase, nargs);
+                    _fs->AddInstruction(nullcall ? _OP_NULLCALL : _OP_CALL, target, closure, stackbase, nargs);
                 }
                 objType = EOT_NONE;
             }

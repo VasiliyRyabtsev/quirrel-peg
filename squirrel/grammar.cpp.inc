@@ -54,7 +54,12 @@ static const char *grammar = R"(
 
     ChainExpr  <- PrefixedExpr (ExprOperator Expression / IncrDecrOp)?
 
-    PrefixedExpr    <- (LOADROOT RootSlotGet / Factor) (FunctionCall / SlotGet / SlotNamedGet)*
+    PrefixedExpr    <- (LOADROOT RootSlotGet / Factor)
+                        (
+                            FunctionCall / SlotGet / SlotNamedGet /
+                            FunctionNullCall / SlotNullGet / SlotNamedNullGet
+                        )*
+
     ExprOperator    <- '=' / '<-' / '+=' / '-='
 
     Factor          <- FLOAT / INTEGER / BOOLEAN / NULL / STRING_LITERAL / VERBATIM_STRING / StrInterp / IDENTIFIER /
@@ -73,6 +78,9 @@ static const char *grammar = R"(
     FunctionCall    <- '(' ArgValues ')'
     SlotGet         <- '[' Expression ']'
     SlotNamedGet    <- '.' IDENTIFIER
+    FunctionNullCall<- '?(' ArgValues ')'
+    SlotNullGet     <- '?[' Expression ']'
+    SlotNamedNullGet<- '?.' IDENTIFIER
     SlotSet         <- '[' Expression ']'
     SlotNamedSet    <- '.' IDENTIFIER
     RootSlotGet     <- IDENTIFIER
