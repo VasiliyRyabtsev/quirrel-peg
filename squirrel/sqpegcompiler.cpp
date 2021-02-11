@@ -456,7 +456,7 @@ public:
     }
 
 
-    ExprObjType Factor(const Ast &ast, bool skip_get, SQInteger &outer_pos) {
+    ExprObjType Factor(const Ast &ast, bool skip_get, SQInteger &outer_pos, size_t &node_idx, const STL::string_view &next_slot_id) {
         outer_pos = -999;
         const auto& tp = ast.nodes[0]->name;
         if (tp == "IDENTIFIER") {
@@ -478,20 +478,21 @@ public:
                 return EOT_LOCAL;
             }
             else if (IsConstant(id, constant)) {
-                // SQObjectPtr constval;
-                // SQObject    constid;
-                // if(sq_type(constant) == OT_TABLE) {
-                //     Expect('.');
-                //     constid = Expect(TK_IDENTIFIER);
-                //     if(!_table(constant)->Get(constid, constval)) {
-                //         constval.Null();
-                //         Error(_SC("invalid constant [%s.%s]"), _stringval(id), _stringval(constid));
-                //     }
-                // }
-                // else {
-                //     constval = constant;
-                // }
-                SQObjectPtr constval = constant;
+                SQObjectPtr constval;
+                SQObject    constid;
+                if(sq_type(constant) == OT_TABLE) {
+                    if (next_slot_id.empty())
+                        Error(_SC(".<slotname> expected"));
+                    constid = makeString(next_slot_id);
+                    if(!_table(constant)->Get(constid, constval)) {
+                        constval.Null();
+                        Error(_SC("invalid constant [%s.%s]"), _stringval(id), _stringval(constid));
+                    }
+                    ++node_idx;
+                }
+                else {
+                    constval = constant;
+                }
 
                 SQInteger tgt = _fs->PushTarget();
 
@@ -847,8 +848,6 @@ public:
 
     void EnumStmt(const Ast &ast) {
         bool global = ast.nodes[0]->token == "global";
-        if (!global)
-            Error("Local enums are not supported yet");
 
         SQObjectPtr id = makeString(ast.nodes[1]->token);
         CheckDuplicateLocalIdentifier(id, _SC("Enum"), global);
@@ -897,8 +896,14 @@ public:
                 nextIsNullable = true;
 
             if (i==0) {
-                if (node.name == "Factor")
-                    objType = Factor(node, skipGet, outer_pos);
+                if (node.name == "Factor") {
+                    STL::string_view nextSlotId;
+                    if (nextNodeName=="SlotNamedGet") {
+                        assert(ast.nodes[i+1]->nodes[0]->name=="IDENTIFIER");
+                        nextSlotId = ast.nodes[i+1]->nodes[0]->token;
+                    }
+                    objType = Factor(node, skipGet, outer_pos, i, nextSlotId);
+                }
                 else {
                     processNode(node);
                     objType = EOT_OBJECT;
