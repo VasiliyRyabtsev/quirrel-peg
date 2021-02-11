@@ -81,7 +81,10 @@ static const char *grammar = R"(
     ArrayInit       <- '[' ArgValues ']'
 
     TableInit       <- '{'  (TableInitItem ','? )* '}'
-    TableInitItem   <- ((IDENTIFIER / ('[' Expression ']') ) '=' Expression) / IDENTIFIER / 'function' IDENTIFIER FuncDecl
+    TableInitItem   <- (IDENTIFIER / ('[' Expression ']') ) '=' Expression /
+                        STRING_LITERAL ':' Expression /
+                        IDENTIFIER /
+                        'function' IDENTIFIER FuncDecl
 
     ClassInit       <- ClassExtends '{'  (ClassInitItem ';'? )* '}'
     ClassExtends    <- ('extends' Expression)?
