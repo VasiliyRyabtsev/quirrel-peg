@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.4)
 project(squirrel VERSION 4.0 LANGUAGES C CXX)
 
 option(DISABLE_STATIC "Avoid building/installing static libraries.")
+option(DISABLE_DYNAMIC "Avoid building/installing dynamic libraries.")
 option(LONG_OUTPUT_NAMES "Use longer names for binaries and libraries: squirrel3 (not sq).")
 option(ENABLE_VAR_TRACE "Enable variable change tracing feature.")
 
@@ -14,7 +15,8 @@ include(GNUInstallDirs)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}")
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}")
-set(CMAKE_CXX_STANDARD 17)
+#set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 11)
 
 if(CMAKE_COMPILER_IS_GNUCXX)
   add_compile_options(
@@ -37,6 +39,7 @@ add_subdirectory(squirrel)
 add_subdirectory(sqstdlib)
 add_subdirectory(sqmodules)
 add_subdirectory(sq)
+add_subdirectory(EASTL)
 
 if(CMAKE_SIZEOF_VOID_P EQUAL 8)
   set(tgts)
