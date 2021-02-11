@@ -25,7 +25,7 @@ static const char *grammar = R"(
 
     ConstStmt <- ConstModifier 'const' IDENTIFIER '=' SCALAR
     ConstModifier <- <'global'>?
-    EnumStmt <- ConstModifier 'enum' IDENTIFIER '{' EnumEntry (','? EnumEntry)* '}'
+    EnumStmt <- ConstModifier 'enum' IDENTIFIER '{' SEQ(EnumEntry, ',') '}'
     EnumEntry <- IDENTIFIER ('=' SCALAR)?
 
     FuncDecl <- '(' FuncParams ')' Statement
@@ -76,7 +76,7 @@ static const char *grammar = R"(
     SlotNamedSet    <- '.' IDENTIFIER
     RootSlotGet     <- IDENTIFIER
 
-    ArgValues       <- Expression? (','? Expression)*
+    ArgValues       <- OPT_SEQ(Expression, ',')
     ArrayInit       <- '[' ArgValues ']'
 
     TableInit       <- '{'  (TableInitItem ','? )* '}'
@@ -134,14 +134,16 @@ static const char *grammar = R"(
     StrInterpExpr    <- '{' Expression '}'
     StrInterpChars   <- ('\\"' / !'"' !'{' .)+
 
-    Directive <- '#' <(!(EOL / EOF / ' ' / '\t') .)*>   #[ \t]* (EOL / EOF)
+    Directive <- '#' <(!(EOL / ' ' / '\t') .)*>   #[ \t]* (EOL)
 
-    EOL <- '\r\n' / '\n' / '\r'
-    EOF <- !.
+    SEQ(ITEM, SEP) <- ITEM (~SEP? ITEM)*
+    OPT_SEQ(ITEM, SEP) <- ITEM? (~SEP? ITEM)*
 
-    MultilineComment <- '/*' (!'*/' .)* '*/'
-    SingleLineComment <- '//' (!(EOL / EOF) .)* (EOL / EOF)
+    EOL <- '\r\n' / '\n' / '\r' / !.
 
-    %whitespace <- ([ \t\r\n] / MultilineComment / SingleLineComment)*
+    BlockComment <- '/*' (!'*/' .)* '*/'
+    LineComment <- '//' (!EOL .)* &EOL
+
+    %whitespace <- ([ \t\r\n] / BlockComment / LineComment)*
     %word       <- [a-zA-Z_][a-zA-Z_0-9]*
 )";
