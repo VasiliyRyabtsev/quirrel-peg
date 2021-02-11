@@ -571,8 +571,18 @@ public:
         }
     }
 
-    void NullCoalesce(const Ast &ast) {
+    void LogicalOp(const Ast &ast) {
         assert(ast.nodes.size() == 3);
+        SQOpcode op;
+        STL::string_view opToken = ast.nodes[1]->token;
+        if (opToken == "??")
+            op = _OP_NULLCOALESCE;
+        else if (opToken == "&&")
+            op = _OP_AND;
+        else if (opToken == "||")
+            op = _OP_OR;
+        else
+            Error(_SC("Unknown logical operator '%s'"), STL::string(opToken).c_str());
 
         processNode(ast.nodes[0]);
 
@@ -595,12 +605,12 @@ public:
 
     void BinaryOpExpr(const Ast &ast) {
         assert(ast.nodes.size() == 3);
-        if (ast.nodes[1]->name != "BINARY_OP")
-            Error(_SC("BINARY_OP expected"));
+        if (ast.nodes[1]->name != "INFIX_OP")
+            Error(_SC("INFIX_OP expected"));
 
-        auto opStr = ast.nodes[1]->token;
-        if (opStr == "??") {
-            NullCoalesce(ast);
+        const auto &opStr = ast.nodes[1]->token;
+        if (opStr == "??" || opStr == "&&" || opStr == "||") {
+            LogicalOp(ast);
             return;
         }
 
@@ -627,6 +637,12 @@ public:
         else if (opStr == ">=")     {op = _OP_CMP; op3 = CMP_GE;}
         else if (opStr == "<=")     {op = _OP_CMP; op3 = CMP_LE;}
         else if (opStr == "<=>")    {op = _OP_CMP; op3 = CMP_3W;}
+        else if (opStr == "|")      {op = _OP_BITW, op3 = BW_OR;}
+        else if (opStr == "&")      {op = _OP_BITW, op3 = BW_AND;}
+        else if (opStr == "^")      {op = _OP_BITW, op3 = BW_XOR;}
+        else if (opStr == "<<")     {op = _OP_BITW, op3 = BW_SHIFTL;}
+        else if (opStr == ">>")     {op = _OP_BITW, op3 = BW_SHIFTR;}
+        else if (opStr == ">>>")    {op = _OP_BITW, op3 = BW_USHIFTR;}
         else
             Error(_SC("Unknown operator '%s'"), STL::string(opStr).c_str());
 

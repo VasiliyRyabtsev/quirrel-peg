@@ -37,11 +37,12 @@ static const char *grammar = R"(
 
     Expression <- BinaryOpExpr TernarySelect?
 
-    BinaryOpExpr <- ChainExpr (BINARY_OP ChainExpr)* {
+    BinaryOpExpr <- ChainExpr (INFIX_OP ChainExpr)* {
                             precedence
                             L ??
                             L ||
                             L && in
+                            L |
                             L ^
                             L &
                             L == != <=>
@@ -116,8 +117,8 @@ static const char *grammar = R"(
     STRING_LITERAL <- <'"' < (!'"' .)* > '"'>
     VERBATIM_STRING <- <'@"' < (!'"' . / '""')* > '"'>
     IDENTIFIER  <- < !KEYWORD [a-zA-Z_][a-zA-Z_0-9]* / 'this' >
-    BINARY_OP   <- !IncrDecrOp <'??' / '||' / '&&' / '^' / '&' /
-                    '==' / '!=' / '<=>' / '<='/ '>=' / '<<' / '>>' / '>>>' / '<' / '>' /
+    INFIX_OP   <- !IncrDecrOp <'??' / '||' / '&&' / '|' / '^' / '&' /
+                    '==' / '!=' / '<=>' / '<='/ '>=' / '<<' / '>>>' / '>>' / '<' / '>' /
                     '+' / '-' / '/' / '*' / '%' /
                     'in' / 'instanceof'>
     LOADROOT    <- '::'
