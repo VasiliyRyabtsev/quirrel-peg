@@ -14,7 +14,9 @@
 //#error "Requires complete C++17 support"
 //#endif
 
+#ifndef USE_EASTL
 #define USE_EASTL 1
+#endif
 
 #if USE_EASTL
 
@@ -110,7 +112,7 @@ struct OnceFlag {
   bool val = false;
 };
 
-template <typename T> void call_once(OnceFlag &flag, T& func)  {
+template <typename T> void call_once(OnceFlag &flag, const T& func)  {
   if (!flag.val) {
     func();
     flag.val = true;
@@ -3800,12 +3802,12 @@ template <typename Annotation> struct AstBase : public Annotation {
     return STL::string(token);
   }
 
-  template <typename T> T token_to_number() const {
-    assert(is_token);
-    T n = 0;
-    STL::from_chars(token.data(), token.data() + token.size(), n);
-    return n;
-  }
+  // template <typename T> T token_to_number() const {
+  //   assert(is_token);
+  //   T n = 0;
+  //   STL::from_chars(token.data(), token.data() + token.size(), n);
+  //   return n;
+  // }
 };
 
 template <typename T>
