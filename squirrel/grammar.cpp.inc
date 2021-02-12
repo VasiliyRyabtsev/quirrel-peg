@@ -11,7 +11,8 @@ static const char *grammar = R"(
         Expression / ';'
     )
 
-    ReturnStatement <- 'return' Expression?
+    ReturnStatement <- `[ 'return' [ \t]* ~EOL ]` ~%whitespace
+                        / 'return' Expression?
     YieldStatement <- 'yield' Expression
     BlockStmt <- '{' Statements '}'
     BreakStmt <- 'break'
