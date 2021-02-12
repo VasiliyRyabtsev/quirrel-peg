@@ -1803,6 +1803,24 @@ public:
 
             auto expr = src;
             STL::shared_ptr<Ast> ast;
+
+            printf("\n=== Parsing script ======\n\n");
+
+            /*
+            int depth = 0;
+            parser.enable_trace(
+                [&depth](const Ope &ope, const char *s, size_t n, const SemanticValues &vs, const Context &c, const STL::any &dt) {
+                    ++depth;
+                },
+                [&depth](const Ope &ope, const char *s, size_t n, const SemanticValues &vs, const Context &c, const STL::any &dt, size_t len) {
+                    --depth;
+                    if (int(len)>0) {
+                        //...
+                    }
+                }
+            );
+            */
+
             if (!parser.parse_n(expr, size_t(src_len), ast)) {
                 // STL::cout << "syntax error..." << STL::endl;
                 // return false;
@@ -1812,6 +1830,7 @@ public:
 
             //STL::shared_ptr<Ast> astOpt = AstOptimizer(true).optimize(ast);
             STL::shared_ptr<Ast> astOpt = ast;
+            printf("\n=== AST: ======\n\n");
             std::cout << ast_to_s(astOpt).c_str();
             //STL::cout << expr << " = " << eval(*ast) << STL::endl;
 
