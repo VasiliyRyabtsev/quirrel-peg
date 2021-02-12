@@ -142,7 +142,7 @@ static const char *grammar = R"(
 
     SCALAR <- INTEGER / FLOAT / BOOLEAN / NULL / STRING_LITERAL / VERBATIM_STRING
 
-    StrInterp        <- '$"' (StrInterpExpr / StrInterpChars)* '"'
+    StrInterp        <- `[ '$"' (StrInterpExpr / StrInterpChars)* '"' ]`
     StrInterpExpr    <- '{' Expression '}'
     StrInterpChars   <- ('\\"' / !'"' !'{' .)+
 
