@@ -794,6 +794,7 @@ public:
   STL::vector<STL::vector<STL::shared_ptr<Ope>>> args_stack;
 
   size_t in_token_boundary_count = 0;
+  size_t keep_whitespace_depth = 0;
 
   STL::shared_ptr<Ope> whitespaceOpe;
   bool in_whitespace = false;
@@ -1367,6 +1368,18 @@ public:
   STL::shared_ptr<Ope> ope_;
 };
 
+class KeepWhitespace : public Ope {
+public:
+  KeepWhitespace(const STL::shared_ptr<Ope> &ope) : ope_(ope) {}
+
+  size_t parse_core(const char *s, size_t n, SemanticValues &vs, Context &c,
+                    STL::any &dt) const override;
+
+  void accept(Visitor &v) override;
+
+  STL::shared_ptr<Ope> ope_;
+};
+
 class Ignore : public Ope {
 public:
   Ignore(const STL::shared_ptr<Ope> &ope) : ope_(ope) {}
@@ -1623,6 +1636,10 @@ inline STL::shared_ptr<Ope> tok(const STL::shared_ptr<Ope> &ope) {
   return STL::make_shared<TokenBoundary>(ope);
 }
 
+inline STL::shared_ptr<Ope> keepwsp(const STL::shared_ptr<Ope> &ope) {
+  return STL::make_shared<KeepWhitespace>(ope);
+}
+
 inline STL::shared_ptr<Ope> ign(const STL::shared_ptr<Ope> &ope) {
   return STL::make_shared<Ignore>(ope);
 }
@@ -1677,6 +1694,7 @@ struct Ope::Visitor {
   virtual void visit(CaptureScope &) {}
   virtual void visit(Capture &) {}
   virtual void visit(TokenBoundary &) {}
+  virtual void visit(KeepWhitespace &) {}
   virtual void visit(Ignore &) {}
   virtual void visit(User &) {}
   virtual void visit(WeakHolder &) {}
@@ -1715,6 +1733,7 @@ struct TraceOpeName : public Ope::Visitor {
   void visit(CaptureScope &) override { name_ = "CaptureScope"; }
   void visit(Capture &) override { name_ = "Capture"; }
   void visit(TokenBoundary &) override { name_ = "TokenBoundary"; }
+  void visit(KeepWhitespace &) override { name_ = "KeepWhitespace"; }
   void visit(Ignore &) override { name_ = "Ignore"; }
   void visit(User &) override { name_ = "User"; }
   void visit(WeakHolder &) override { name_ = "WeakHolder"; }
@@ -1752,6 +1771,7 @@ struct AssignIDToDefinition : public Ope::Visitor {
   void visit(CaptureScope &ope) override { ope.ope_->accept(*this); }
   void visit(Capture &ope) override { ope.ope_->accept(*this); }
   void visit(TokenBoundary &ope) override { ope.ope_->accept(*this); }
+  void visit(KeepWhitespace &ope) override { ope.ope_->accept(*this); }
   void visit(Ignore &ope) override { ope.ope_->accept(*this); }
   void visit(WeakHolder &ope) override { ope.weak_.lock()->accept(*this); }
   void visit(Holder &ope) override;
@@ -1799,6 +1819,7 @@ struct TokenChecker : public Ope::Visitor {
   void visit(CaptureScope &ope) override { ope.ope_->accept(*this); }
   void visit(Capture &ope) override { ope.ope_->accept(*this); }
   void visit(TokenBoundary &) override { has_token_boundary_ = true; }
+  void visit(KeepWhitespace &ope) override { ope.ope_->accept(*this); }
   void visit(Ignore &ope) override { ope.ope_->accept(*this); }
   void visit(WeakHolder &) override { has_rule_ = true; }
   void visit(Holder &ope) override { ope.ope_->accept(*this); }
@@ -1996,6 +2017,7 @@ struct DetectInfiniteLoop : public Ope::Visitor {
   void visit(CaptureScope &ope) override { ope.ope_->accept(*this); }
   void visit(Capture &ope) override { ope.ope_->accept(*this); }
   void visit(TokenBoundary &ope) override { ope.ope_->accept(*this); }
+  void visit(KeepWhitespace &ope) override { ope.ope_->accept(*this); }
   void visit(Ignore &ope) override { ope.ope_->accept(*this); }
   void visit(WeakHolder &ope) override { ope.weak_.lock()->accept(*this); }
   void visit(Holder &ope) override { ope.ope_->accept(*this); }
@@ -2033,6 +2055,7 @@ struct ReferenceChecker : public Ope::Visitor {
   void visit(CaptureScope &ope) override { ope.ope_->accept(*this); }
   void visit(Capture &ope) override { ope.ope_->accept(*this); }
   void visit(TokenBoundary &ope) override { ope.ope_->accept(*this); }
+  void visit(KeepWhitespace &ope) override { ope.ope_->accept(*this); }
   void visit(Ignore &ope) override { ope.ope_->accept(*this); }
   void visit(WeakHolder &ope) override { ope.weak_.lock()->accept(*this); }
   void visit(Holder &ope) override { ope.ope_->accept(*this); }
@@ -2069,6 +2092,7 @@ struct LinkReferences : public Ope::Visitor {
   void visit(CaptureScope &ope) override { ope.ope_->accept(*this); }
   void visit(Capture &ope) override { ope.ope_->accept(*this); }
   void visit(TokenBoundary &ope) override { ope.ope_->accept(*this); }
+  void visit(KeepWhitespace &ope) override { ope.ope_->accept(*this); }
   void visit(Ignore &ope) override { ope.ope_->accept(*this); }
   void visit(WeakHolder &ope) override { ope.weak_.lock()->accept(*this); }
   void visit(Holder &ope) override { ope.ope_->accept(*this); }
@@ -2135,6 +2159,10 @@ struct FindReference : public Ope::Visitor {
   void visit(TokenBoundary &ope) override {
     ope.ope_->accept(*this);
     found_ope = tok(found_ope);
+  }
+  void visit(KeepWhitespace &ope) override {
+    ope.ope_->accept(*this);
+    found_ope = keepwsp(found_ope);
   }
   void visit(Ignore &ope) override {
     ope.ope_->accept(*this);
@@ -2402,7 +2430,7 @@ inline size_t parse_literal(const char *s, size_t n, SemanticValues &vs,
   }
 
   // Skip whiltespace
-  if (!c.in_token_boundary_count) {
+  if (!c.in_token_boundary_count && !c.keep_whitespace_depth) {
     if (c.whitespaceOpe) {
       size_t len = c.whitespaceOpe->parse(s + i, n - i, vs, c, dt);
       if (fail(len)) { return len; }
@@ -2496,7 +2524,7 @@ inline size_t TokenBoundary::parse_core(const char *s, size_t n,
   if (success(len)) {
     vs.tokens.emplace_back(STL::string_view(s, len));
 
-    if (!c.in_token_boundary_count) {
+    if (!c.in_token_boundary_count && !c.keep_whitespace_depth) {
       if (c.whitespaceOpe) {
         size_t l = c.whitespaceOpe->parse(s + len, n - len, vs, c, dt);
         if (fail(l)) { return l; }
@@ -2504,6 +2532,23 @@ inline size_t TokenBoundary::parse_core(const char *s, size_t n,
       }
     }
   }
+  return len;
+}
+
+inline size_t KeepWhitespace::parse_core(const char *s, size_t n,
+                                        SemanticValues &vs, Context &c,
+                                        STL::any &dt) const {
+  size_t len;
+  {
+    c.keep_whitespace_depth++;
+    STL::string childName = TraceOpeName::get(*ope_);
+
+    auto se = make_scope_exit([&]() {
+      c.keep_whitespace_depth--;
+    });
+    len = ope_->parse(s, n, vs, c, dt);
+  }
+
   return len;
 }
 
@@ -2787,6 +2832,7 @@ inline void AnyCharacter::accept(Visitor &v) { v.visit(*this); }
 inline void CaptureScope::accept(Visitor &v) { v.visit(*this); }
 inline void Capture::accept(Visitor &v) { v.visit(*this); }
 inline void TokenBoundary::accept(Visitor &v) { v.visit(*this); }
+inline void KeepWhitespace::accept(Visitor &v) { v.visit(*this); }
 inline void Ignore::accept(Visitor &v) { v.visit(*this); }
 inline void User::accept(Visitor &v) { v.visit(*this); }
 inline void WeakHolder::accept(Visitor &v) { v.visit(*this); }
@@ -3010,7 +3056,9 @@ private:
             seq(g["OPEN"], g["Expression"], g["CLOSE"]),
             seq(g["BeginTok"], g["Expression"], g["EndTok"]),
             seq(g["BeginCapScope"], g["Expression"], g["EndCapScope"]),
-            seq(g["BeginCap"], g["Expression"], g["EndCap"]), g["BackRef"],
+            seq(g["BeginCap"], g["Expression"], g["EndCap"]),
+            seq(g["BeginKeepWhitespace"], g["Expression"], g["EndKeepWhitespace"]),
+            g["BackRef"],
             g["LiteralI"], g["Dictionary"], g["Literal"], g["NegatedClass"],
             g["Class"], g["DOT"]);
 
@@ -3089,6 +3137,9 @@ private:
 
     ~g["BeginTok"] <= seq(chr('<'), g["Spacing"]);
     ~g["EndTok"] <= seq(chr('>'), g["Spacing"]);
+
+    ~g["BeginKeepWhitespace"] <= seq(lit("`["), g["Spacing"]);
+    ~g["EndKeepWhitespace"] <= seq(lit("]`"), g["Spacing"]);
 
     ~g["BeginCapScope"] <= seq(chr('$'), chr('('), g["Spacing"]);
     ~g["EndCapScope"] <= seq(chr(')'), g["Spacing"]);
@@ -3344,6 +3395,11 @@ private:
           auto &cs = c.capture_scope_stack[c.capture_scope_stack_size - 1];
           cs[name] = STL::string(a_s, a_n);
         });
+      }
+      case 6: { // KeepWhitespace
+        auto ope = STL::any_cast<STL::shared_ptr<Ope>>(vs[0]);
+        STL::string name = TraceOpeName::get(*ope);
+        return keepwsp(ope);
       }
       default: {
         return STL::any_cast<STL::shared_ptr<Ope>>(vs[0]);
