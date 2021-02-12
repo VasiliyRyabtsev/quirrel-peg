@@ -1370,9 +1370,12 @@ public:
   STL::shared_ptr<Ope> ope_;
 };
 
-class KeepWhitespace : public Ope {
+class KeepWhitespace : public Ope, public STL::enable_shared_from_this<KeepWhitespace> {
 public:
-  KeepWhitespace(const STL::shared_ptr<Ope> &ope) : ope_(ope) {}
+  KeepWhitespace(const STL::shared_ptr<Ope> &ope, bool mode)
+    : ope_(ope)
+    , mode_(mode)
+  {}
 
   size_t parse_core(const char *s, size_t n, SemanticValues &vs, Context &c,
                     STL::any &dt) const override;
@@ -1380,6 +1383,7 @@ public:
   void accept(Visitor &v) override;
 
   STL::shared_ptr<Ope> ope_;
+  bool mode_;
 };
 
 class Ignore : public Ope {
@@ -1638,8 +1642,8 @@ inline STL::shared_ptr<Ope> tok(const STL::shared_ptr<Ope> &ope) {
   return STL::make_shared<TokenBoundary>(ope);
 }
 
-inline STL::shared_ptr<Ope> keepwsp(const STL::shared_ptr<Ope> &ope) {
-  return STL::make_shared<KeepWhitespace>(ope);
+inline STL::shared_ptr<Ope> keepwsp(const STL::shared_ptr<Ope> &ope, bool mode) {
+  return STL::make_shared<KeepWhitespace>(ope, mode);
 }
 
 inline STL::shared_ptr<Ope> ign(const STL::shared_ptr<Ope> &ope) {
@@ -2163,8 +2167,7 @@ struct FindReference : public Ope::Visitor {
     found_ope = tok(found_ope);
   }
   void visit(KeepWhitespace &ope) override {
-    ope.ope_->accept(*this);
-    found_ope = keepwsp(found_ope);
+    found_ope = ope.shared_from_this();
   }
   void visit(Ignore &ope) override {
     ope.ope_->accept(*this);
@@ -2540,13 +2543,19 @@ inline size_t TokenBoundary::parse_core(const char *s, size_t n,
 inline size_t KeepWhitespace::parse_core(const char *s, size_t n,
                                         SemanticValues &vs, Context &c,
                                         STL::any &dt) const {
+  assert(c.keep_whitespace_depth >= 0);
+
   size_t len;
   {
-    c.keep_whitespace_depth++;
+    int delta = mode_ ? 1 : -1;
+    if (delta < 0 && c.keep_whitespace_depth <= 0)
+      delta = 0;
+    c.keep_whitespace_depth += delta;
     STL::string childName = TraceOpeName::get(*ope_);
 
     auto se = make_scope_exit([&]() {
-      c.keep_whitespace_depth--;
+      c.keep_whitespace_depth -= delta;
+      assert(c.keep_whitespace_depth >= 0);
     });
     len = ope_->parse(s, n, vs, c, dt);
   }
@@ -3059,6 +3068,7 @@ private:
             seq(g["BeginTok"], g["Expression"], g["EndTok"]),
             seq(g["BeginCapScope"], g["Expression"], g["EndCapScope"]),
             seq(g["BeginCap"], g["Expression"], g["EndCap"]),
+            seq(g["BeginConsumeWhitespace"], g["Expression"], g["EndConsumeWhitespace"]),
             seq(g["BeginKeepWhitespace"], g["Expression"], g["EndKeepWhitespace"]),
             g["BackRef"],
             g["LiteralI"], g["Dictionary"], g["Literal"], g["NegatedClass"],
@@ -3142,6 +3152,8 @@ private:
 
     ~g["BeginKeepWhitespace"] <= seq(lit("`["), g["Spacing"]);
     ~g["EndKeepWhitespace"] <= seq(lit("]`"), g["Spacing"]);
+    ~g["BeginConsumeWhitespace"] <= seq(lit("`[["), g["Spacing"]);
+    ~g["EndConsumeWhitespace"] <= seq(lit("]]`"), g["Spacing"]);
 
     ~g["BeginCapScope"] <= seq(chr('$'), chr('('), g["Spacing"]);
     ~g["EndCapScope"] <= seq(chr(')'), g["Spacing"]);
@@ -3398,10 +3410,13 @@ private:
           cs[name] = STL::string(a_s, a_n);
         });
       }
-      case 6: { // KeepWhitespace
+      case 6: { // KeepWhitespace: off
         auto ope = STL::any_cast<STL::shared_ptr<Ope>>(vs[0]);
-        STL::string name = TraceOpeName::get(*ope);
-        return keepwsp(ope);
+        return keepwsp(ope, false);
+      }
+      case 7: { // KeepWhitespace: on
+        auto ope = STL::any_cast<STL::shared_ptr<Ope>>(vs[0]);
+        return keepwsp(ope, true);
       }
       default: {
         return STL::any_cast<STL::shared_ptr<Ope>>(vs[0]);
