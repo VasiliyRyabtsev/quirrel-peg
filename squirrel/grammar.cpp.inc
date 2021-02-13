@@ -11,8 +11,7 @@ static const char *grammar = R"(
         Expression / ';'
     )
 
-    ReturnStatement <- `[ 'return' [ \t]* ~EOL ]` ~%whitespace
-                        / 'return' Expression?
+    ReturnStatement <-  `[ 'return' ]` [ \t]* (~EOL / Expression?) ~%whitespace
     YieldStatement <- 'yield' Expression
     BlockStmt <- '{' Statements '}'
     BreakStmt <- 'break'
@@ -143,8 +142,8 @@ static const char *grammar = R"(
 
     SCALAR <- INTEGER / FLOAT / BOOLEAN / NULL / STRING_LITERAL / VERBATIM_STRING
 
-    StrInterp        <- `[ '$"' (StrInterpExpr / StrInterpChars)* '"' ]`
-    StrInterpExpr    <- '{' `[[ Expression ]]` '}'
+    StrInterp        <- `['$"']` (StrInterpExpr / StrInterpChars)* '"'
+    StrInterpExpr    <- '{' Expression `[ '}' ]`
     StrInterpChars   <- ('\\"' / !'"' !'{' .)+
 
     Directive <- '#' <(!(EOL / ' ' / '\t') .)*>   #[ \t]* (EOL)
