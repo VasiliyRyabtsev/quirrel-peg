@@ -1754,6 +1754,71 @@ public:
         }
     }
 
+    void PatchHangingPreIncrements(STL::shared_ptr<Ast> &ast) {
+        for (size_t iNode=0; iNode<ast->nodes.size(); ++iNode) {
+            STL::shared_ptr<Ast> node = ast->nodes[iNode];
+
+            PatchHangingPreIncrements(node);
+
+            STL::shared_ptr<Ast> parent = node->parent.lock();
+
+            bool isNextPreIncrement = (iNode>0 && iNode==ast->nodes.size()-1
+                && node->name == "IncrDecrOp" && parent->name=="ChainExpr"
+                && node->line > ast->nodes[iNode-1]->line);
+
+            if (!isNextPreIncrement)
+                continue;
+
+            STL::shared_ptr<Ast> postIncrDecrStatement;
+            for (STL::shared_ptr<Ast> p=parent; p; p=p->parent.lock()) {
+                if (p->name=="Statement") {
+                    postIncrDecrStatement = p;
+                    break;
+                }
+            }
+            assert(postIncrDecrStatement);
+            STL::shared_ptr<Ast> statements = postIncrDecrStatement->parent.lock();
+            assert(statements && statements->name=="Statements");
+            int curBranchIdx = -1;
+            for (size_t iStatement=0; iStatement<statements->nodes.size(); ++iStatement) {
+                const STL::shared_ptr<Ast> &s = statements->nodes[iStatement];
+                if (curBranchIdx >= 0 && iStatement>curBranchIdx) {
+                    if (s->name != "Statement")
+                        break;
+                    if (s->nodes.empty())
+                        continue;
+                    bool isTarget = (s->nodes[0]->name == "Expression"
+                        && !s->nodes[0]->nodes.empty() && s->nodes[0]->nodes[0]->name == "ChainExpr");
+                    if (isTarget) {
+                        parent->nodes.erase(parent->nodes.begin()+iNode);
+
+                        STL::shared_ptr<Ast> &expr = s->nodes[0];
+                        STL::shared_ptr<Ast> newChain;
+                        STL::shared_ptr<Ast> srcChain = expr->nodes[0];
+                        newChain.reset(new Ast(nullptr, 0, 0, "ChainExpr", STL::string_view()));
+                        expr->nodes.clear();
+                        expr->nodes.push_back(newChain);
+
+                        STL::shared_ptr<Ast> newFactor;
+                        newFactor.reset(new Ast(nullptr, 0, 0, "Factor", STL::string_view()));
+                        newChain->nodes.push_back(newFactor);
+
+                        STL::shared_ptr<Ast> newPreIncrDecr;
+                        newPreIncrDecr.reset(new Ast(nullptr, 0, 0, "PreIncrDecr", STL::string_view()));
+                        newFactor->nodes.push_back(newPreIncrDecr);
+
+                        newPreIncrDecr->nodes.push_back(node);
+                        newPreIncrDecr->nodes.push_back(srcChain);
+                    }
+                    break;
+                }
+                else if (s == postIncrDecrStatement) {
+                    curBranchIdx = int(iStatement);
+                }
+            }
+        }
+    }
+
 
     void processAst(const Ast &ast, SQObjectPtr &o)
     {
@@ -1831,12 +1896,15 @@ public:
             //STL::shared_ptr<Ast> astOpt = AstOptimizer(true).optimize(ast);
             STL::shared_ptr<Ast> astOpt = ast;
             printf("\n=== AST: ======\n\n");
-            std::cout << ast_to_s(astOpt).c_str();
-            //STL::cout << expr << " = " << eval(*ast) << STL::endl;
+            printf("%s\n", ast_to_s(astOpt).c_str());
 
             FlattenExpressions(astOpt);
             printf("\n=== Flattened: ======\n\n");
-            std::cout << ast_to_s(astOpt).c_str();
+            printf("%s\n", ast_to_s(astOpt).c_str());
+
+            PatchHangingPreIncrements(astOpt);
+            printf("\n=== Patched increments: ======\n\n");
+            printf("%s\n", ast_to_s(astOpt).c_str());
 
             processAst(*astOpt, o);
         } else {
