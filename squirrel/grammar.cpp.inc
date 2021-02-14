@@ -18,10 +18,13 @@ static const char *grammar = R"(
     ContinueStmt <- 'continue'
 
     LocalDeclStatement <- 'function' LocalFuncDeclStmt / LocalVarsDeclStmt / 'class' LocalClassDeclStmt
+                            / LocalTblDestructuring / LocalArrDestructuring
     LocalVarDeclStmt <- IDENTIFIER '=' Expression / IDENTIFIER
     LocalVarsDeclStmt <- LocalVarDeclStmt (',' LocalVarDeclStmt)*
     LocalFuncDeclStmt <- IDENTIFIER FuncDecl
     LocalClassDeclStmt <- IDENTIFIER ClassInit
+    LocalTblDestructuring <- '{' LocalVarsDeclStmt '}' '=' Expression
+    LocalArrDestructuring <- '[' LocalVarsDeclStmt ']' '=' Expression
 
     ConstStmt <- ConstModifier 'const' IDENTIFIER '=' SCALAR
     ConstModifier <- <'global'>?

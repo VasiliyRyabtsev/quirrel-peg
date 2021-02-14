@@ -656,9 +656,12 @@ public:
     }
 
 
-    void LocalVarDeclStmt(const Ast &ast) {
+    void LocalVarDeclStmt(const Ast &ast, sqvector<SQInteger> *targets, sqvector<SQInteger> *flags, SQObjectPtrVec *names) {
         SQObjectPtr varname = makeString(ast.nodes[0]->token);
         CheckDuplicateLocalIdentifier(varname, _SC("Local variable"), false);
+
+        if (names)
+            names->push_back(varname);
 
         if (ast.nodes.size() > 1) {
             processChildren(ast);
@@ -666,12 +669,61 @@ public:
             SQInteger dest = _fs->PushTarget();
             if (dest != src)
                 _fs->AddInstruction(_OP_MOVE, dest, src);
+            if (flags)
+                flags->push_back(OP_GET_FLAG_NO_ERROR | OP_GET_FLAG_KEEP_VAL);
         }
         else {
             _fs->AddInstruction(_OP_LOADNULLS, _fs->PushTarget(), 1);
+            if (flags)
+                flags->push_back(0);
+        }
+        SQInteger tgt = _fs->PopTarget();
+        if (targets)
+            targets->push_back(tgt);
+        _fs->PushLocalVariable(varname);
+    }
+
+    void LocalVarsDeclStmt(const Ast &ast) {
+        for (const auto &node : ast.nodes) {
+            assert(node->name == "LocalVarDeclStmt");
+            LocalVarDeclStmt(*node, nullptr, nullptr, nullptr);
+        }
+    }
+
+
+    void LocalDestructuring(const Ast &ast, NewObjectType otype) {
+        assert(ast.nodes.size() == 2);
+        assert(ast.nodes[0]->name == "LocalVarsDeclStmt");
+        assert(ast.nodes[1]->name == "Expression");
+
+        sqvector<SQInteger> targets(_ss(_vm)->_alloc_ctx);
+        sqvector<SQInteger> flags(_ss(_vm)->_alloc_ctx);
+        SQObjectPtrVec names(_ss(_vm)->_alloc_ctx);
+
+        for (const auto &node : ast.nodes[0]->nodes) {
+            assert(node->name == "LocalVarDeclStmt");
+            LocalVarDeclStmt(*node, &targets, &flags, &names);
+        }
+
+        processNode(ast.nodes[1]);
+
+        SQInteger src = _fs->TopTarget();
+        SQInteger key_pos = _fs->PushTarget();
+        if (otype == NOT_ARRAY) {
+            for (SQUnsignedInteger i=0; i<targets.size(); ++i) {
+                EmitLoadConstInt(i, key_pos);
+                _fs->AddInstruction(_OP_GET, targets[i], src, key_pos, flags[i]);
+            }
+        }
+        else {
+            for (SQUnsignedInteger i=0; i<targets.size(); ++i) {
+                _fs->AddInstruction(_OP_LOAD, key_pos, _fs->GetConstant(names[i]));
+                _fs->AddInstruction(_OP_GET, targets[i], src, key_pos, flags[i]);
+            }
         }
         _fs->PopTarget();
-        _fs->PushLocalVariable(varname);
+        _fs->PopTarget();
+
     }
 
 
@@ -1666,8 +1718,15 @@ public:
             BlockStatement(ast);
         else if (ast.name == "BinaryOpExpr")
             BinaryOpExpr(ast);
-        else if (ast.name == "LocalVarDeclStmt")
-            LocalVarDeclStmt(ast);
+        else if (ast.name == "LocalVarsDeclStmt")
+            LocalVarsDeclStmt(ast);
+        else if (ast.name == "LocalVarDeclStmt") {
+            Error(_SC("LocalVarDeclStmt should be called directly"));
+        }
+        else if (ast.name == "LocalTblDestructuring")
+            LocalDestructuring(ast, NOT_TABLE);
+        else if (ast.name == "LocalArrDestructuring")
+            LocalDestructuring(ast, NOT_ARRAY);
         else if (ast.name == "Factor") {
             //Factor(ast);
             Error(_SC("Factor should be called directly"));
