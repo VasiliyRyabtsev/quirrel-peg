@@ -504,7 +504,7 @@ public:
                     case OT_BOOL: _fs->AddInstruction(_OP_LOADBOOL, tgt, _integer(constval)); break;
                     default: _fs->AddInstruction(_OP_LOAD, tgt, _fs->GetConstant(constval)); break;
                 }
-                return EOT_OBJECT;
+                return EOT_NONE;
             }
             else {
                 /* Handle a non-local variable, aka a field. Push the 'this' pointer on
@@ -523,6 +523,11 @@ public:
         }
         else {
             processChildren(ast);
+        }
+
+        if (tp == "INTEGER" || tp == "FLOAT" || tp == "BOOLEAN" || tp == "NULL"
+            || tp == "STRING_LITERAL" || tp == "VERBATIM_STRING" || tp == "LOADROOT") {
+            return EOT_NONE;
         }
 
         return EOT_OBJECT;
