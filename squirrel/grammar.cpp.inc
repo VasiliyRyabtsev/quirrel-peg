@@ -126,7 +126,7 @@ static const char *grammar = R"(
 
     INTEGER     <- < [-+]? [0-9]+ >
     FLOAT       <- < [-+]?[0-9]* '.'? [0-9]+([eE][-+]?[0-9]+)? / ['-+']?[0-9]+ '.' [0-9]* >
-    BOOLEAN     <- < 'true' | 'false' >
+    BOOLEAN     <- < 'true' / 'false' >
     NULL        <- 'null'
     STRING_LITERAL <- <'"' < (!'"' .)* > '"'>
     VERBATIM_STRING <- <'@"' < (!'"' . / '""')* > '"'>
