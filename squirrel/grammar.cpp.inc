@@ -44,12 +44,12 @@ static const char *grammar = R"(
                             precedence
                             L ??
                             L ||
-                            L && in
+                            L &&
                             L |
                             L ^
                             L &
                             L == != <=>
-                            L < <= > >= instanceof
+                            L < <= > >= in instanceof
                             L << >> >>>
                             L + -
                             L / * %
