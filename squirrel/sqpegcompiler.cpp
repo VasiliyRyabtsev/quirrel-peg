@@ -397,9 +397,28 @@ public:
 
     SQInteger tokenToInteger(const STL::string_view &token) {
         SQInteger n = 0;
-        //STL::from_chars(token.data(), token.data() + token.size(), n);
-        for (char c : token) {
-            n = n*10+(c-'0');
+        if (token.starts_with("0x")) {
+            for (char c : token.substr(2)) {
+                if (scisdigit(c))
+                    n = n*16+(c-'0');
+                else if (scisxdigit(c))
+                    n = n*16+(toupper(c)-'A'+10);
+                else { assert(0); }
+            }
+
+        }
+        else if (token.starts_with('\'')) {
+            if (token == "'\\''")
+                return '\'';
+            else {
+                assert(token.length() == 3);
+                return token[1];
+            }
+        }
+        else {
+            for (char c : token) {
+                n = n*10+(c-'0');
+            }
         }
 
         return n;

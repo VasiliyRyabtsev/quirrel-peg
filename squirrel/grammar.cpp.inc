@@ -124,7 +124,7 @@ static const char *grammar = R"(
     FuncAtThisStmt <- 'function' IDENTIFIER FuncDecl
     ClassAtThisStmt <- 'class' IDENTIFIER ClassInit
 
-    INTEGER     <- < [-+]? [0-9]+ >
+    INTEGER     <- < '0x'[0-9a-fA-F]+ / [-+]?[0-9]+ / [']("\\'" / [^'])['] >
     FLOAT       <- < [-+]?[0-9]* '.'? [0-9]+([eE][-+]?[0-9]+)? / [-+]?[0-9]+ '.' [0-9]* >
     BOOLEAN     <- < 'true' / 'false' >
     NULL        <- 'null'
