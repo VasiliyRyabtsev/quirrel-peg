@@ -965,7 +965,7 @@ public:
         for (size_t i=0; i<nNodes; ++i) {
             const auto &node = *ast.nodes[i];
             const STL::string &nextNodeName = (i<nNodes-1) ? ast.nodes[i+1]->name : strNone;
-            bool nextIsCall = nextNodeName == "FunctionCall";
+            bool nextIsCall = nextNodeName == "FunctionCall" || nextNodeName == "FunctionNullCall";
             bool nextIsOperator = nextNodeName == "ExprOperator" || nextNodeName == "IncrDecrOp";
             bool skipGet = nextIsCall || nextIsOperator || (skip_last_get && i==nNodes-1);
             if (nextNodeName == "FunctionNullCall" || nextNodeName == "SlotNullGet" || nextNodeName == "SlotNamedNullGet")
