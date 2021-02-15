@@ -594,7 +594,7 @@ public:
 
         SQInteger first_exp = _fs->PopTarget();
         SQInteger trg = _fs->PushTarget();
-        _fs->AddInstruction(_OP_NULLCOALESCE, trg, 0, first_exp, 0);
+        _fs->AddInstruction(op, trg, 0, first_exp, 0);
         SQInteger jpos = _fs->GetCurrentPos();
         if (trg != first_exp)
             _fs->AddInstruction(_OP_MOVE, trg, first_exp);
