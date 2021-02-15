@@ -125,7 +125,8 @@ static const char *grammar = R"(
     ClassAtThisStmt <- 'class' IDENTIFIER ClassInit
 
     INTEGER     <- < '0x'[0-9a-fA-F]+ / [-+]?[0-9]+ / [']("\\'" / [^'])['] >
-    FLOAT       <- < [-+]?[0-9]* '.'? [0-9]+([eE][-+]?[0-9]+)? / [-+]?[0-9]+ '.' [0-9]* >
+    FLOAT       <- < [-+]? ([0-9]* '.' [0-9]+ / [0-9]+ '.' [0-9]*) ([eE][-+]?[0-9]+)?
+                    / [-+]? [0-9]+ ([eE][-+]?[0-9]+) >
     BOOLEAN     <- < 'true' / 'false' >
     NULL        <- 'null'
     STRING_LITERAL <- <'"' < (!'"' .)* > '"'>

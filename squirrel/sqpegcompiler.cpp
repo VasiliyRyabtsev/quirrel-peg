@@ -416,9 +416,18 @@ public:
             }
         }
         else {
-            for (char c : token) {
+            SQInteger sign = 1;
+            size_t start = 0;
+            if (token.starts_with('+'))
+                start = 1;
+            else if (token.starts_with('-')) {
+                sign = -1;
+                start = 1;
+            }
+            for (char c : token.substr(start)) {
                 n = n*10+(c-'0');
             }
+            n *= sign;
         }
 
         return n;
