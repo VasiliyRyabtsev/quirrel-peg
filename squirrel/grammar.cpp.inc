@@ -88,7 +88,7 @@ static const char *grammar = R"(
     SlotNamedSet    <- '.' IDENTIFIER
     RootSlotGet     <- IDENTIFIER
 
-    ArgValues       <- OPT_SEQ(Expression, ',')
+    ArgValues       <- (Expression ','?)*
     ArrayInit       <- '[' ArgValues ']'
 
     TableInit       <- '{'  (TableInitItem ','? )* '}'
