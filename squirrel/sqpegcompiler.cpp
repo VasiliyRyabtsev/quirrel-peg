@@ -497,9 +497,16 @@ public:
                 return EOT_LOCAL;
             }
             else if ((pos = _fs->GetOuterVariable(id)) != -1) {
-                _fs->AddInstruction(_OP_GETOUTER, _fs->PushTarget(), pos);
-                outer_pos = pos;
-                return EOT_OUTER;
+                if (!skip_get) {
+                    SQInteger tgt = _fs->PushTarget();
+                    _fs->AddInstruction(_OP_GETOUTER, tgt, pos);
+                    outer_pos = tgt;
+                    return EOT_NONE;
+                }
+                else {
+                    outer_pos = pos;
+                    return EOT_OUTER;
+                }
             }
             else if (sq_isstring(_fs->_name) && scstrcmp(_stringval(_fs->_name), _stringval(id))==0) {
                 _fs->AddInstruction(_OP_LOADCALLEE, _fs->PushTarget());
