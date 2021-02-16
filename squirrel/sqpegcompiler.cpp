@@ -142,7 +142,7 @@ public:
         return _fs->CreateString(s.data(), s.length());
     }
 
-    bool IsConstant(const SQObject &name,SQObject &e)
+    bool IsConstant(const SQObject &name,SQObjectPtr &e)
     {
         if (IsLocalConstant(name, e))
             return true;
@@ -151,7 +151,7 @@ public:
         return false;
     }
 
-    bool IsLocalConstant(const SQObject &name,SQObject &e)
+    bool IsLocalConstant(const SQObject &name,SQObjectPtr &e)
     {
         SQObjectPtr val;
         for (SQInteger i=SQInteger(_scopedconsts.size())-1; i>=0; --i) {
@@ -164,7 +164,7 @@ public:
         return false;
     }
 
-    bool IsGlobalConstant(const SQObject &name,SQObject &e)
+    bool IsGlobalConstant(const SQObject &name,SQObjectPtr &e)
     {
         SQObjectPtr val;
         if(_table(_ss(_vm)->_consts)->Get(name,val)) {
@@ -181,7 +181,7 @@ public:
         if (_stringval(name) == _stringval(_fs->_name))
             Error(_SC("%s name '%s' conflicts with function name"), desc, _stringval(name));
 
-        SQObject constant;
+        SQObjectPtr constant;
         if (ignore_global_consts ? IsLocalConstant(name, constant) : IsConstant(name, constant))
             Error(_SC("%s name '%s' conflicts with existing constant/enum"), desc, _stringval(name));
     }
@@ -512,11 +512,10 @@ public:
             }
             else if (IsConstant(id, constant)) {
                 SQObjectPtr constval;
-                SQObject    constid;
                 if(sq_type(constant) == OT_TABLE) {
                     if (next_slot_id.empty())
                         Error(_SC(".<slotname> expected"));
-                    constid = makeString(next_slot_id);
+                    SQObjectPtr  constid = makeString(next_slot_id);
                     if(!_table(constant)->Get(constid, constval)) {
                         constval.Null();
                         Error(_SC("invalid constant [%s.%s]"), _stringval(id), _stringval(constid));
@@ -774,7 +773,7 @@ public:
     }
 
 
-    void FuncDecl(const Ast &ast, SQObject &name, bool lambda) {
+    void FuncDecl(const Ast &ast, const SQObject &name, bool lambda) {
         assert(ast.nodes.size() == 2);
         assert(ast.nodes[0]->name == "FuncParams");
         if (lambda) {
@@ -891,7 +890,7 @@ public:
         _fs->PopTarget();
     }
 
-    SQObject ParseScalar(const Ast &ast)
+    SQObjectPtr ParseScalar(const Ast &ast)
     {
         SQObjectPtr val;
         if (ast.name == "INTEGER") {
@@ -929,7 +928,7 @@ public:
         SQObjectPtr id = makeString(ast.nodes[1]->token);
         CheckDuplicateLocalIdentifier(id, _SC("Constant"), global);
 
-        SQObject val = ParseScalar(*ast.nodes[2]->nodes[0]);
+        SQObjectPtr val = ParseScalar(*ast.nodes[2]->nodes[0]);
 
         SQTable *enums = global ? _table(_ss(_vm)->_consts) : GetScopedConstsTable();
         enums->NewSlot(id, SQObjectPtr(val));
@@ -942,7 +941,7 @@ public:
         SQObjectPtr id = makeString(ast.nodes[1]->token);
         CheckDuplicateLocalIdentifier(id, _SC("Enum"), global);
 
-        SQObject table = _fs->CreateTable();
+        SQObjectPtr table = _fs->CreateTable();
         SQInteger nval = 0;
         for (size_t i=2; i<ast.nodes.size(); ++i) {
             const Ast &entry = *ast.nodes[i];
@@ -1548,7 +1547,7 @@ public:
         SQInteger jmppos = _fs->GetCurrentPos();
         _fs->SetInstructionParam(trappos, 1, (_fs->GetCurrentPos() - trappos));
 
-        SQObject exid = makeString(ast.nodes[1]->token);
+        SQObjectPtr exid = makeString(ast.nodes[1]->token);
 
         {
             BEGIN_SCOPE();
