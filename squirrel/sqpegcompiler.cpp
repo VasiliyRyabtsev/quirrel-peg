@@ -1965,6 +1965,7 @@ public:
             };
 
             parser.enable_ast();
+            parser.enable_packrat_parsing();
 
             auto expr = src;
             STL::shared_ptr<Ast> ast;
