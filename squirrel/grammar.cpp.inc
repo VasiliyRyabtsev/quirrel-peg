@@ -67,7 +67,7 @@ static const char *grammar = R"(
 
     Factor          <- FLOAT / INTEGER / BOOLEAN / NULL / STRING_LITERAL / VERBATIM_STRING / StrInterp / IDENTIFIER /
                         ArrayInit / TableInit / 'class' ClassInit / FactorFunc /
-                        UnaryOperation / PreIncrDecr / '(' Expression ')'
+                        UnaryOperation / PreIncrDecr / SlotDelete / '(' Expression ')'
     FactorFunc      <- 'function' IDENTIFIER? FuncDecl / LambdaDecl
 
     TernarySelect   <- '?' Expression ':' Expression
@@ -77,6 +77,8 @@ static const char *grammar = R"(
 
     PreIncrDecr     <- IncrDecrOp ChainExpr
     IncrDecrOp      <- '++' / '--'
+
+    SlotDelete      <- 'delete' ChainExpr
 
     FunctionCall    <- '(' ArgValues ')'
     SlotGet         <- '[' Expression ']'

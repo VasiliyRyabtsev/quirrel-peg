@@ -1609,6 +1609,21 @@ public:
     }
 
 
+    void SlotDelete(const Ast &ast) {
+        assert(ast.nodes.size() == 1);
+        assert(ast.nodes[0]->name == "ChainExpr");
+
+        SQInteger outer_pos = -888;
+        ExprObjType objType = ChainExpr(*ast.nodes[0], outer_pos, true);
+        if (objType==EOT_NONE)
+            Error(_SC("can't delete an expression"));
+        else if (objType==EOT_LOCAL || objType==EOT_OUTER)
+            Error(_SC("cannot delete an (outer) local"));
+        else if (objType==EOT_OBJECT/* || _es.etype==BASE*/) {
+            Emit2ArgsOP(_OP_DELETE);
+        }
+    }
+
     void TernarySelect(const Ast &ast) {
         _fs->AddInstruction(_OP_JZ, _fs->PopTarget());
         SQInteger jzpos = _fs->GetCurrentPos();
@@ -1824,6 +1839,8 @@ public:
             UnaryOperation(ast);
         else if (ast.name == "PreIncrDecr")
             PreIncrDecr(ast);
+        else if (ast.name == "SlotDelete")
+            SlotDelete(ast);
         else if (ast.name == "TernarySelect")
             TernarySelect(ast);
         else if (ast.name == "FuncAtThisStmt")
