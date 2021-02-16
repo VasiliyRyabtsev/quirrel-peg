@@ -144,7 +144,7 @@ static const char *grammar = R"(
         'constructor' / 'instanceof' / 'true' / 'false' / 'static' / 'enum' / 'const' / '__LINE__' / '__FILE__'
         / 'rawcall' / 'global' / 'not'
 
-    SCALAR <- INTEGER / FLOAT / BOOLEAN / NULL / STRING_LITERAL / VERBATIM_STRING
+    SCALAR <- FLOAT / INTEGER / BOOLEAN / NULL / STRING_LITERAL / VERBATIM_STRING
 
     StrInterp        <- `['$"']` (StrInterpExpr / StrInterpChars)* '"'
     StrInterpExpr    <- '{' Expression `[ '}' ]`
