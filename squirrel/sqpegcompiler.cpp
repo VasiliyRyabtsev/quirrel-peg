@@ -973,25 +973,25 @@ public:
         const STL::string strNone;
 
         bool needPrepCall = false;
-        bool nextIsNullable = false;
+        bool chainIsNullable = false;
 
-        for (size_t i=0; i<nNodes; ++i) {
-            const auto &node = *ast.nodes[i];
-            const STL::string &nextNodeName = (i<nNodes-1) ? ast.nodes[i+1]->name : strNone;
+        for (size_t iPos=0; iPos<nNodes; ++iPos) {
+            const auto &node = *ast.nodes[iPos];
+            const STL::string &nextNodeName = (iPos<nNodes-1) ? ast.nodes[iPos+1]->name : strNone;
             bool nextIsCall = nextNodeName == "FunctionCall" || nextNodeName == "FunctionNullCall";
             bool nextIsOperator = nextNodeName == "ExprOperator" || nextNodeName == "IncrDecrOp";
-            bool skipGet = nextIsCall || nextIsOperator || (skip_last_get && i==nNodes-1);
-            if (nextNodeName == "FunctionNullCall" || nextNodeName == "SlotNullGet" || nextNodeName == "SlotNamedNullGet")
-                nextIsNullable = true;
+            bool skipGet = nextIsCall || nextIsOperator || (skip_last_get && iPos==nNodes-1);
+            if (node.name == "FunctionNullCall" || node.name == "SlotNullGet" || node.name == "SlotNamedNullGet")
+                chainIsNullable = true;
 
-            if (i==0) {
+            if (iPos==0) {
                 if (node.name == "Factor") {
                     STL::string_view nextSlotId;
                     if (nextNodeName=="SlotNamedGet") {
-                        assert(ast.nodes[i+1]->nodes[0]->name=="IDENTIFIER");
-                        nextSlotId = ast.nodes[i+1]->nodes[0]->token;
+                        assert(ast.nodes[iPos+1]->nodes[0]->name=="IDENTIFIER");
+                        nextSlotId = ast.nodes[iPos+1]->nodes[0]->token;
                     }
-                    objType = Factor(node, skipGet, outer_pos, i, nextSlotId);
+                    objType = Factor(node, skipGet, outer_pos, iPos, nextSlotId);
                 }
                 else {
                     processNode(node);
@@ -1009,7 +1009,7 @@ public:
                 assert(node.nodes.size() == 1);
 
                 SQInteger flags = 0;
-                if (nextIsNullable)
+                if (chainIsNullable)
                     flags |= OP_GET_FLAG_NO_ERROR;
 
                 if (node.name == "SlotGet" || node.name == "SlotNullGet")
@@ -1035,7 +1035,7 @@ public:
             }
             else if (node.name == "FunctionCall" || node.name == "FunctionNullCall") {
                 assert(node.nodes.size() == 1);
-                bool nullcall = nextIsNullable;
+                bool nullcall = chainIsNullable;
 
                 if (objType == EOT_OUTER) {
                     _fs->AddInstruction(_OP_GETOUTER, _fs->PushTarget(), outer_pos);
@@ -1087,9 +1087,9 @@ public:
                 objType = EOT_NONE;
             }
             else if (node.name == "ExprOperator") {
-                assert(i<ast.nodes.size()-1);
-                const auto &nodeVal = ast.nodes[i+1];
-                i+=1;
+                assert(iPos<ast.nodes.size()-1);
+                const auto &nodeVal = ast.nodes[iPos+1];
+                iPos+=1;
 
                 processNode(nodeVal);
 
