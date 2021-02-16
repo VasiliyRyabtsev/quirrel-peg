@@ -498,9 +498,7 @@ public:
             }
             else if ((pos = _fs->GetOuterVariable(id)) != -1) {
                 if (!skip_get) {
-                    SQInteger tgt = _fs->PushTarget();
-                    _fs->AddInstruction(_OP_GETOUTER, tgt, pos);
-                    outer_pos = tgt;
+                    _fs->AddInstruction(_OP_GETOUTER, _fs->PushTarget(), pos);
                     return EOT_NONE;
                 }
                 else {
@@ -1040,7 +1038,11 @@ public:
                 assert(node.nodes.size() == 1);
                 bool nullcall = nextIsNullable;
 
-                if (needPrepCall) {
+                if (objType == EOT_OUTER) {
+                    _fs->AddInstruction(_OP_GETOUTER, _fs->PushTarget(), outer_pos);
+                    _fs->AddInstruction(_OP_MOVE,     _fs->PushTarget(), 0);
+                }
+                else if (needPrepCall) {
                     // member/slot function
                     if (!nullcall) {
                         SQInteger key     = _fs->PopTarget();  /* location of the key */
