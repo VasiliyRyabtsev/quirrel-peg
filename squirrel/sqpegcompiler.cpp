@@ -30,7 +30,8 @@ enum ExprObjType {
     EOT_NONE,
     EOT_OBJECT,
     EOT_LOCAL,
-    EOT_OUTER
+    EOT_OUTER,
+    EOT_BASE
 };
 
 
@@ -252,7 +253,8 @@ public:
                 _fs->SnoozeOpt();
             }
             break;
-        case EOT_OBJECT: {
+        case EOT_OBJECT:
+        case EOT_BASE: {
                 SQInteger val = _fs->PopTarget();
                 SQInteger key = _fs->PopTarget();
                 SQInteger src = _fs->PopTarget();
@@ -552,6 +554,10 @@ public:
                 }
                 return EOT_OBJECT;
             }
+        }
+        else if (tp == "BASE") {
+            _fs->AddInstruction(_OP_GETBASE, _fs->PushTarget());
+            return EOT_BASE;
         }
         else {
             processChildren(ast);
@@ -1031,7 +1037,10 @@ public:
                 if (!skipGet) {
                     Emit2ArgsOP(_OP_GET, flags);
                 }
-                objType = EOT_OBJECT;
+                if (objType == EOT_BASE)
+                    objType = EOT_NONE;
+                else
+                    objType = EOT_OBJECT;
             }
             else if (node.name == "FunctionCall" || node.name == "FunctionNullCall") {
                 assert(node.nodes.size() == 1);
@@ -1105,12 +1114,17 @@ public:
                         case EOT_OBJECT:
                             EmitDerefOp(_OP_SET);
                             break;
+                        case EOT_BASE:
+                            Error("Can't assign to base");
+                            break;
                         case EOT_OUTER: {
                             SQInteger src = _fs->PopTarget();
                             SQInteger dst = _fs->PushTarget();
                             _fs->AddInstruction(_OP_SETOUTER, dst, outer_pos, src);
                             break;
                         }
+                        case EOT_NONE:
+                            Error(_SC("Can't assign to an expression"));
                     }
                 }
                 else if (nodeOp->token == "<-") {
@@ -1119,6 +1133,8 @@ public:
                     EmitDerefOp(_OP_NEWSLOT);
                 }
                 else if (nodeOp->token == "+=" || nodeOp->token == "-=" || nodeOp->token == "*=" || nodeOp->token == "/=" || nodeOp->token == "%=") {
+                    if (objType == EOT_BASE)
+                        Error(_SC("'base' cannot be modified"));
                     EmitCompoundArith(nodeOp->token, objType, outer_pos);
                 }
                 else
@@ -1132,7 +1148,7 @@ public:
                         Error(_SC("can't '++' or '--' an expression"));
                         break;
                     case EOT_OBJECT:
-                    //case BASE:
+                    case EOT_BASE:
                         Emit2ArgsOP(_OP_PINC, diff);
                         break;
                     case EOT_LOCAL: {
@@ -1592,7 +1608,7 @@ public:
         if (objType==EOT_NONE) {
             Error(_SC("can't '++' or '--' an expression"));
         }
-        else if (objType==EOT_OBJECT/* || _es.etype==BASE*/) {
+        else if (objType==EOT_OBJECT || objType==EOT_BASE) {
             Emit2ArgsOP(_OP_INC, diff);
         }
         else if (objType==EOT_LOCAL) {
@@ -1619,7 +1635,7 @@ public:
             Error(_SC("can't delete an expression"));
         else if (objType==EOT_LOCAL || objType==EOT_OUTER)
             Error(_SC("cannot delete an (outer) local"));
-        else if (objType==EOT_OBJECT/* || _es.etype==BASE*/) {
+        else if (objType==EOT_OBJECT || objType==EOT_BASE) {
             Emit2ArgsOP(_OP_DELETE);
         }
     }
@@ -1970,10 +1986,20 @@ public:
     {
         //printf("===\n%.*s\n===\n", int(src_len), src);
 
-        parser parser(grammar);
 
-        if(setjmp(_errorjmp) == 0) {
+        parser parser;
+        parser.log = [&](size_t line, size_t col, const STL::string& msg) {
+            // report grammar erros during development
+            printf("Grammar parse error at %d:%d: %s\n", int(line), int(col), msg.c_str());
+            assert(0);
+        };
 
+        if (!parser.load_grammar(grammar)) {
+            printf("Failed to load grammar\n");
+            assert(0);
+        }
+
+        if (setjmp(_errorjmp) == 0) {
             parser.log = [&](size_t line, size_t col, const STL::string& msg) {
                 _src_line = int(line);
                 _src_col = int(col);

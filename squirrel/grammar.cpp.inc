@@ -65,7 +65,8 @@ static const char *grammar = R"(
 
     ExprOperator    <- '=' / '<-' / '+=' / '-='
 
-    Factor          <- FLOAT / INTEGER / BOOLEAN / NULL / STRING_LITERAL / VERBATIM_STRING / StrInterp / IDENTIFIER /
+    Factor          <- FLOAT / INTEGER / BOOLEAN / NULL / STRING_LITERAL / VERBATIM_STRING / StrInterp /
+                        IDENTIFIER / BASE /
                         ArrayInit / TableInit / 'class' ClassInit / FactorFunc /
                         UnaryOperation / PreIncrDecr / SlotDelete / '(' Expression ')'
     FactorFunc      <- 'function' IDENTIFIER? FuncDecl / LambdaDecl
@@ -139,6 +140,7 @@ static const char *grammar = R"(
                     '+' / '-' / '/' / '*' / '%' /
                     'in' / 'instanceof'>
     LOADROOT    <- '::'
+    BASE        <- 'base'
 
     KEYWORD <- 'while' / 'do' / 'if' / 'else' / 'break' / 'continue' / 'return' / 'null' / 'function' /
         'local' / 'for' / 'foreach' / 'in' / 'typeof' / 'base' / 'delete' / 'try' / 'catch' / 'throw' /
