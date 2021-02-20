@@ -66,6 +66,7 @@ static const char *grammar = R"(
     ExprOperator    <- '=' / '<-' / '+=' / '-='
 
     Factor          <- FLOAT / INTEGER / BOOLEAN / NULL / STRING_LITERAL / VERBATIM_STRING / StrInterp /
+                        InExprLocal /
                         IDENTIFIER / BASE /
                         ArrayInit / TableInit / 'class' ClassInit / FactorFunc /
                         UnaryOperation / PreIncrDecr / SlotDelete / '(' Expression ')'
@@ -75,6 +76,8 @@ static const char *grammar = R"(
 
     UnaryOperation  <- UnaryOperator ChainExpr
     UnaryOperator   <- !IncrDecrOp <'!' / '~' / '-' / 'typeof' / 'resume' / 'clone' >
+
+    InExprLocal     <- 'local' IDENTIFIER ':=' Expression
 
     PreIncrDecr     <- IncrDecrOp ChainExpr
     IncrDecrOp      <- '++' / '--'

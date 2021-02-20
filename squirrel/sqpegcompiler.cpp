@@ -765,6 +765,24 @@ public:
     }
 
 
+    void InExprLocal(const Ast &ast) {
+        assert(ast.nodes.size()==2);
+        assert(ast.nodes[1]->name == "Expression");
+        SQObjectPtr varname = makeString(ast.nodes[0]->token);
+        assert(*_stringval(varname));
+        CheckDuplicateLocalIdentifier(varname, _SC("Local intra-expression variable"), false);
+
+        SQInteger varPos = _fs->PushLocalVariable(varname);
+
+        processNode(ast.nodes[1]);
+
+        SQInteger src = _fs->PopTarget();
+        SQInteger dest = _fs->PushTarget(varPos);
+        if (dest != src)
+            _fs->AddInstruction(_OP_MOVE, dest, src);
+    }
+
+
     void LocalFuncDeclStmt(const Ast &ast) {
         assert(ast.nodes.size() == 2);
         assert(ast.nodes[0]->name == "IDENTIFIER");
@@ -1281,6 +1299,8 @@ public:
         assert(ast.nodes.size() == 2 || ast.nodes.size() == 3);
         assert(ast.nodes[0]->name == "Expression");
 
+        BEGIN_SCOPE();
+
         processNode(ast.nodes[0]);
 
         _fs->AddInstruction(_OP_JZ, _fs->PopTarget());
@@ -1296,10 +1316,15 @@ public:
             _fs->SetInstructionParam(jmppos, 1, _fs->GetCurrentPos() - jmppos);
         }
         _fs->SetInstructionParam(jnepos, 1, endifblock - jnepos + (hasElse?1:0));
+
+        END_SCOPE();
     }
 
 
     void WhileStmt(const Ast &ast) {
+        BEGIN_SCOPE();
+        {
+
         SQInteger jzpos, jmppos;
         jmppos = _fs->GetCurrentPos();
         processNode(ast.nodes[0]);
@@ -1316,6 +1341,9 @@ public:
         _fs->SetInstructionParam(jzpos, 1, _fs->GetCurrentPos() - jzpos);
 
         END_BREAKBLE_BLOCK(jmppos);
+
+        }
+        END_SCOPE();
     }
 
 
@@ -1454,6 +1482,8 @@ public:
     }
 
     void SwitchStmt(const Ast &ast) {
+        BEGIN_SCOPE();
+
         const auto &testExpr = ast.nodes[0];
         processNode(testExpr);
 
@@ -1511,6 +1541,8 @@ public:
         if(__nbreaks__ > 0)ResolveBreaks(_fs, __nbreaks__);
         _fs->_breaktargets.pop_back();
         _fs->_blockstacksizes.pop_back();
+
+        END_SCOPE();
     }
 
 
@@ -1709,6 +1741,7 @@ public:
         }
     }
 
+
     void Directive(const Ast &ast) {
         STL::string str(ast.token);
         const SQChar *sval = str.c_str();
@@ -1865,6 +1898,8 @@ public:
             ClassAtThisStmt(ast);
         else if (ast.name == "StrInterp")
             StrInterp(ast);
+        else if (ast.name == "InExprLocal")
+            InExprLocal(ast);
         else if (ast.name == "Directive")
             Directive(ast);
         else
