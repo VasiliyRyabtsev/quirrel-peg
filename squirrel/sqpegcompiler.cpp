@@ -1838,9 +1838,6 @@ public:
         else if (ast.name == "FuncDecl") {
             //FuncDecl(ast);
             Error(_SC("FuncDecl should be called directly"));
-        } else if (ast.name == "PrefixedExpr") {
-            //PrefixedExpr(ast);
-            Error(_SC("PrefixedExpr should be flattened out"));
         }
         else if (ast.name == "ConstStmt")
             ConstStmt(ast);
@@ -1906,21 +1903,6 @@ public:
             processChildren(ast);
     }
 
-
-    void FlattenExpressions(STL::shared_ptr<Ast> &ast) {
-        for (size_t i=0; i<ast->nodes.size(); ) {
-            auto &node = ast->nodes[i];
-            FlattenExpressions(node);
-            if (node->name == "PrefixedExpr") {
-                auto tmp = node;
-                ast->nodes.erase(ast->nodes.begin() + i);
-                ast->nodes.insert(ast->nodes.begin() + i, tmp->nodes.begin(), tmp->nodes.end());
-                i += tmp->nodes.size();
-            }
-            else
-                ++i;
-        }
-    }
 
     void PatchHangingPreIncrements(STL::shared_ptr<Ast> &ast) {
         for (size_t iNode=0; iNode<ast->nodes.size(); ++iNode) {
@@ -2075,10 +2057,6 @@ public:
             //STL::shared_ptr<Ast> astOpt = AstOptimizer(true).optimize(ast);
             STL::shared_ptr<Ast> astOpt = ast;
             printf("\n=== AST: ======\n\n");
-            printf("%s\n", ast_to_s(astOpt).c_str());
-
-            FlattenExpressions(astOpt);
-            printf("\n=== Flattened: ======\n\n");
             printf("%s\n", ast_to_s(astOpt).c_str());
 
             PatchHangingPreIncrements(astOpt);

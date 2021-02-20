@@ -55,9 +55,9 @@ static const char *grammar = R"(
                             L / * %
     }
 
-    ChainExpr  <- PrefixedExpr (ExprOperator Expression / IncrDecrOp)?
+    ChainExpr  <- PrefixedExpr() (ExprOperator Expression / IncrDecrOp)?
 
-    PrefixedExpr    <- (LOADROOT RootSlotGet / Factor)
+    PrefixedExpr(_) <- (LOADROOT RootSlotGet / Factor)
                         (
                             FunctionCall / SlotGet / SlotNamedGet /
                             FunctionNullCall / SlotNullGet / SlotNamedNullGet
