@@ -6,6 +6,8 @@
 #include "sqobject.h"
 struct SQString;
 struct SQTable;
+struct SQPegParser;
+
 //max number of character for a printed number
 #define NUMBER_MAX_CHAR 50
 
@@ -118,6 +120,9 @@ public:
     SQUnsignedInteger defaultLangFeatures;
     SQUserPointer _foreignptr;
     SQRELEASEHOOK _releasehook;
+
+    SQPegParser *_peg_parser;
+
 private:
     SQChar *_scratchpad;
     SQInteger _scratchpadsize;

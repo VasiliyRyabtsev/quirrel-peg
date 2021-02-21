@@ -10,7 +10,6 @@
 #include "sqclosure.h"
 #include "squserdata.h"
 #include "sqcompiler.h"
-#include "sqpegcompiler.h"
 #include "sqfuncstate.h"
 #include "sqclass.h"
 
@@ -1609,16 +1608,6 @@ SQRESULT sq_compilebuffer(HSQUIRRELVM v,const SQChar *s,SQInteger size,const SQC
     buf.size = size;
     buf.ptr = 0;
     return sq_compile(v, buf_lexfeed, &buf, sourcename, raiseerror);
-}
-
-SQRESULT sq_compilepeg(HSQUIRRELVM v,const SQChar *s,SQInteger size,const SQChar *sourcename,SQBool raiseerror,const HSQOBJECT *bindings) {
-    SQObjectPtr o;
-    if(CompilePeg(v, s, size, bindings, sourcename, o, raiseerror?true:false, _ss(v)->_debuginfo)) {
-        v->Push(SQClosure::Create(_ss(v), _funcproto(o),
-                _table(v->_roottable)->GetWeakRef(_ss(v)->_alloc_ctx, OT_TABLE)));
-        return SQ_OK;
-    }
-    return SQ_ERROR;
 }
 
 

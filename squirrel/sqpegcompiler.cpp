@@ -11,7 +11,9 @@
 #include "sqlexer.h"
 #include "sqvm.h"
 #include "sqtable.h"
+#include "sqclosure.h"
 #include "peglib.h"
+#include "squtils.h"
 
 #define MAX_COMPILER_ERROR_LEN 256
 #define MAX_FUNCTION_NAME_LEN 128
@@ -20,6 +22,12 @@
 using namespace peg;
 
 #include "grammar.cpp.inc"
+
+struct SQPegParser
+{
+    peg::parser parser;
+};
+
 
 struct SQScope {
     SQInteger outers;
@@ -2003,18 +2011,7 @@ public:
     {
         //printf("===\n%.*s\n===\n", int(src_len), src);
 
-
-        parser parser;
-        parser.log = [&](size_t line, size_t col, const STL::string& msg) {
-            // report grammar erros during development
-            printf("Grammar parse error at %d:%d: %s\n", int(line), int(col), msg.c_str());
-            assert(0);
-        };
-
-        if (!parser.load_grammar(grammar)) {
-            printf("Failed to load grammar\n");
-            assert(0);
-        }
+        parser &parser = _ss(_vm)->_peg_parser->parser;
 
         if (setjmp(_errorjmp) == 0) {
             parser.log = [&](size_t line, size_t col, const STL::string& msg) {
@@ -2023,9 +2020,6 @@ public:
                 //Error(_SC("Parse error at %d:%d: %s"), int(line), int(col), msg.c_str());
                 Error(_SC("Parse error: %s"), msg.c_str());
             };
-
-            parser.enable_ast();
-            parser.enable_packrat_parsing();
 
             auto expr = src;
             STL::shared_ptr<Ast> ast;
@@ -2095,4 +2089,47 @@ bool CompilePeg(SQVM *vm, const SQChar *src, SQInteger src_len, const HSQOBJECT 
 {
     SQPegCompiler p(vm, sourcename, raiseerror, lineinfo);
     return p.Compile(src, src_len, out);
+}
+
+SQPegParser* sq_createpegparser(SQAllocContext alloc_ctx)
+{
+    SQPegParser *pp;
+    sq_new(alloc_ctx, pp, SQPegParser);
+
+    pp->parser.log = [&](size_t line, size_t col, const STL::string& msg) {
+        // report grammar erros during development
+        printf("Grammar parse error at %d:%d: %s\n", int(line), int(col), msg.c_str());
+        assert(0);
+    };
+
+    if (!pp->parser.load_grammar(grammar)) {
+        assert(!"Failed to load grammar");
+        sq_delete(alloc_ctx, pp, SQPegParser);
+        return nullptr;
+    }
+
+    pp->parser.enable_ast();
+    pp->parser.enable_packrat_parsing();
+    return pp;
+}
+
+SQUIRREL_API void sq_destroypegparser(SQPegParser *pp, SQAllocContext alloc_ctx)
+{
+    sq_delete(alloc_ctx, pp, SQPegParser);
+}
+
+
+SQRESULT sq_compilepeg(HSQUIRRELVM v,const SQChar *s,SQInteger size,const SQChar *sourcename,SQBool raiseerror,const HSQOBJECT *bindings) {
+#ifndef NO_COMPILER
+
+    SQObjectPtr o;
+    if(CompilePeg(v, s, size, bindings, sourcename, o, raiseerror?true:false, _ss(v)->_debuginfo)) {
+        v->Push(SQClosure::Create(_ss(v), _funcproto(o),
+                _table(v->_roottable)->GetWeakRef(_ss(v)->_alloc_ctx, OT_TABLE)));
+        return SQ_OK;
+    }
+    return SQ_ERROR;
+#else
+    return sq_throwerror(v,_SC("this is a no compiler build"));
+#endif
 }

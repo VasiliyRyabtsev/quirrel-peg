@@ -11,6 +11,7 @@
 #include "sqarray.h"
 #include "squserdata.h"
 #include "sqclass.h"
+#include "sqpegcompiler.h"
 
 SQSharedState::SQSharedState(SQAllocContext allocctx) :
     _alloc_ctx(allocctx),
@@ -160,6 +161,7 @@ void SQSharedState::Init()
     _weakref_default_delegate = CreateDefaultDelegate(this,_weakref_default_delegate_funcz);
     _userdata_default_delegate = CreateDefaultDelegate(this,_userdata_default_delegate_funcz);
 
+    _peg_parser = sq_createpegparser(_alloc_ctx);
 }
 
 SQSharedState::~SQSharedState()
@@ -216,6 +218,7 @@ SQSharedState::~SQSharedState()
     sq_delete(_alloc_ctx, _metamethods,SQObjectPtrVec);
     sq_delete(_alloc_ctx, _stringtable,SQStringTable);
     if(_scratchpad)SQ_FREE(_alloc_ctx,_scratchpad,_scratchpadsize);
+    sq_destroypegparser(_peg_parser, _alloc_ctx);
 }
 
 
