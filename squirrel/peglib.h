@@ -822,17 +822,19 @@ public:
   Context(const char *path, const char *s, size_t l, size_t def_count,
           STL::shared_ptr<Ope> whitespaceOpe, STL::shared_ptr<Ope> wordOpe,
           bool enablePackratParsing, TracerEnter tracer_enter,
-          TracerLeave tracer_leave, Log log)
+          TracerLeave tracer_leave, Log log, bool need_source_line_index)
       : path(path), s(s), l(l), whitespaceOpe(whitespaceOpe), wordOpe(wordOpe),
         def_count(def_count), enablePackratParsing(enablePackratParsing),
         cache_registered(enablePackratParsing ? def_count * (l + 1) : 0),
         cache_success(enablePackratParsing ? def_count * (l + 1) : 0),
         tracer_enter(tracer_enter), tracer_leave(tracer_leave), log(log) {
 
-    for (size_t pos = 0; pos < l; pos++) {
-      if (s[pos] == '\n') { source_line_index.push_back(pos); }
+    if (need_source_line_index) {
+      for (size_t pos = 0; pos < l; pos++) {
+        if (s[pos] == '\n') { source_line_index.push_back(pos); }
+      }
+      source_line_index.push_back(l);
     }
-    source_line_index.push_back(l);
 
     args_stack.resize(1);
 
@@ -2384,7 +2386,7 @@ private:
     if (whitespaceOpe) { ope = STL::make_shared<Sequence>(whitespaceOpe, ope); }
 
     Context cxt(path, s, n, definition_ids_.size(), whitespaceOpe, wordOpe,
-                enablePackratParsing, tracer_enter, tracer_leave, log);
+                enablePackratParsing, tracer_enter, tracer_leave, log, true);
 
     size_t len = ope->parse(s, n, vs, cxt, dt);
     return Result{success(len), cxt.recovered, len, cxt.error_info};
@@ -2418,7 +2420,7 @@ inline size_t parse_literal(const char *s, size_t n, SemanticValues &vs,
   // Word check
   SemanticValues dummy_vs;
   Context dummy_c(nullptr, c.s, c.l, 0, nullptr, nullptr, false, nullptr,
-                  nullptr, nullptr);
+                  nullptr, nullptr, false);
   STL::any dummy_dt;
 
   call_once(init_is_word, [&]() {
