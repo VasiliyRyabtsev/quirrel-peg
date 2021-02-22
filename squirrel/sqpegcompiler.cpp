@@ -660,12 +660,11 @@ public:
         if (ast.nodes[1]->name != "INFIX_OP")
             Error(_SC("INFIX_OP expected"));
 
-        const auto &opStr = ast.nodes[1]->token;
-        if (opStr == "??" || opStr == "&&" || opStr == "||") {
+        const auto &opStrV = ast.nodes[1]->token;
+        if (opStrV == "??" || opStrV == "&&" || opStrV == "||") {
             LogicalOp(ast);
             return;
         }
-
 
         processChildren(ast);
 
@@ -675,6 +674,7 @@ public:
 
         SQOpcode op;
 
+        STL::string opStr = peg::PrecedenceClimbing::preprocessToken(opStrV);
         if (opStr == "+")           op = _OP_ADD;
         else if (opStr == "-")      op = _OP_SUB;
         else if (opStr == "*")      op = _OP_MUL;
@@ -682,7 +682,7 @@ public:
         else if (opStr == "%")      op = _OP_MOD;
         else if (opStr == "==")     op = _OP_EQ;
         else if (opStr == "!=")     op = _OP_NE;
-        else if (opStr == "in")     op = _OP_EXISTS;
+        else if (opStr == "in" || opStr == "notin")     op = _OP_EXISTS;
         else if (opStr == "instanceof")     op = _OP_INSTANCEOF;
         else if (opStr == ">")      {op = _OP_CMP; op3 = CMP_G;}
         else if (opStr == "<")      {op = _OP_CMP; op3 = CMP_L;}
@@ -699,6 +699,11 @@ public:
             Error(_SC("Unknown operator '%s'"), STL::string(opStr).c_str());
 
         _fs->AddInstruction(op, _fs->PushTarget(), op1, op2, op3);
+
+        if (opStr == "notin") {
+            SQInteger src = _fs->PopTarget();
+            _fs->AddInstruction(_OP_NOT, _fs->PushTarget(), src);
+        }
     }
 
 

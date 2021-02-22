@@ -49,7 +49,7 @@ static const char *grammar = R"(
                             L ^
                             L &
                             L == != <=>
-                            L < <= > >= in instanceof
+                            L < <= > >= in notin instanceof
                             L << >> >>>
                             L + -
                             L / * %
@@ -138,10 +138,10 @@ static const char *grammar = R"(
     STRING_LITERAL <- <'"' < (!'"' .)* > '"'>
     VERBATIM_STRING <- <'@"' < (!'"' . / '""')* > '"'>
     IDENTIFIER  <- < !KEYWORD [a-zA-Z_][a-zA-Z_0-9]* / 'this' >
-    INFIX_OP   <- !IncrDecrOp <'??' / '||' / '&&' / '|' / '^' / '&' /
+    INFIX_OP   <- !IncrDecrOp (<'??' / '||' / '&&' / '|' / '^' / '&' /
                     '==' / '!=' / '<=>' / '<='/ '>=' / '<<' / '>>>' / '>>' / '<' / '>' /
                     '+' / '-' / '/' / '*' / '%' /
-                    'in' / 'instanceof'>
+                    'in' / 'instanceof'> / ('not' 'in'))
     LOADROOT    <- '::'
     BASE        <- 'base'
 
