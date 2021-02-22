@@ -1532,6 +1532,8 @@ public:
 
   void accept(Visitor &v) override;
 
+  static STL::string preprocessToken(const STL::string_view &token);
+
   STL::shared_ptr<Ope> atom_;
   STL::shared_ptr<Ope> binop_;
   BinOpeInfo info_;
@@ -2710,6 +2712,20 @@ PrecedenceClimbing::get_reference_for_binop(Context &c) const {
   return *static_cast<Reference &>(*binop_).rule_;
 }
 
+
+STL::string PrecedenceClimbing::preprocessToken(const STL::string_view &token) {
+  if (!token.find_first_of(' ') && !token.find_first_of('\t'))
+    return STL::string(token);
+
+  STL::string s;
+  s.reserve(token.length());
+  for (char c : token)
+    if (c!=' ' && c!='\t')
+      s.push_back(c);
+  return s;
+};
+
+
 inline size_t PrecedenceClimbing::parse_expression(const char *s, size_t n,
                                                    SemanticValues &vs,
                                                    Context &c, STL::any &dt,
@@ -2722,7 +2738,8 @@ inline size_t PrecedenceClimbing::parse_expression(const char *s, size_t n,
   auto action = STL::move(rule.action);
 
   rule.action = [&](SemanticValues &vs2, STL::any &dt2) {
-    tok = vs2.token();
+    tok = preprocessToken(vs2.token());
+
     if (action) {
       return action(vs2, dt2);
     } else if (!vs2.empty()) {
