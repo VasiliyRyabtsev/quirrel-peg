@@ -63,7 +63,7 @@ static const char *grammar = R"(
                             FunctionNullCall / SlotNullGet / SlotNamedNullGet
                         )*
 
-    ExprOperator    <- '=' / '<-' / '+=' / '-='
+    ExprOperator    <- '=' / '<-' / '+=' / '-=' / '*=' / '/=' / '%='
 
     Factor          <- FLOAT / INTEGER / BOOLEAN / NULL / STRING_LITERAL / VERBATIM_STRING / StrInterp /
                         InExprLocal /
