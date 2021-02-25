@@ -135,7 +135,7 @@ static const char *grammar = R"(
                     / [-+]? [0-9]+ ([eE][-+]?[0-9]+) >
     BOOLEAN     <- < 'true' / 'false' >
     NULL        <- 'null'
-    STRING_LITERAL <- <'"' < (!'"' .)* > '"'>
+    STRING_LITERAL <- <'"' < ('\\"' / !'"' .)* > '"'>
     VERBATIM_STRING <- <'@"' < (!'"' . / '""')* > '"'>
     IDENTIFIER  <- < !KEYWORD [a-zA-Z_][a-zA-Z_0-9]* / 'this' >
     INFIX_OP   <- !IncrDecrOp (<'??' / '||' / '&&' / '|' / '^' / '&' /
