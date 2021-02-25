@@ -1233,10 +1233,13 @@ public:
 
                 if (item->nodes.size()==1) {
                     SQInteger pos;
+                    SQObjectPtr constant;
                     if ((pos = _fs->GetLocalVariable(key)) != -1)
                         _fs->PushTarget(pos);
                     else if ((pos = _fs->GetOuterVariable(key)) != -1)
                         _fs->AddInstruction(_OP_GETOUTER, _fs->PushTarget(), pos);
+                    else if (IsConstant(key, constant))
+                        _fs->AddInstruction(_OP_LOAD,_fs->PushTarget(),_fs->GetConstant(constant));
                     else
                         Error(_SC("Local variable '%s' not found"), _stringval(key));
                 }
