@@ -28,7 +28,7 @@ static const char *grammar = R"(
 
     ConstStmt <- ConstModifier 'const' IDENTIFIER '=' SCALAR
     ConstModifier <- <'global'>?
-    EnumStmt <- ConstModifier 'enum' IDENTIFIER '{' SEQ(EnumEntry, ',') '}'
+    EnumStmt <- ConstModifier 'enum' IDENTIFIER '{' (EnumEntry ','?)+ '}'
     EnumEntry <- IDENTIFIER ('=' SCALAR)?
 
     FuncDecl <- '(' FuncParams ')' Statement
