@@ -1,14 +1,14 @@
 static const char *grammar = R"(
     Statements <- Statement*
     Statement <- (
-        Directive /
+        (Directive /
         ReturnStatement / YieldStatement /
         IfStmt / ForStmt / ForeachStmt / WhileStmt / DoWhileStmt / SwitchStmt / BlockStmt /
         BreakStmt / ContinueStmt / ThrowStmt / TryCatchStmt /
         ConstStmt / EnumStmt /
         'local' LocalDeclStatement /
         FuncAtThisStmt / ClassAtThisStmt /
-        Expression / ';'
+        Expression) ';'? / ';'
     )
 
     ReturnStatement <-  `[ 'return' ]` [ \t]* (~EOL / Expression?) ~%whitespace
