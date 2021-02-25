@@ -571,12 +571,7 @@ public:
             processChildren(ast);
         }
 
-        if (tp == "INTEGER" || tp == "FLOAT" || tp == "BOOLEAN" || tp == "NULL"
-            || tp == "STRING_LITERAL" || tp == "VERBATIM_STRING" || tp == "LOADROOT") {
-            return EOT_NONE;
-        }
-
-        return EOT_OBJECT;
+        return EOT_NONE;
     }
 
 
