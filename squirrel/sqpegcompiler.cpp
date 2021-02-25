@@ -35,7 +35,7 @@ struct SQScope {
 };
 
 enum ExprObjType {
-    EOT_NONE,
+    EOT_EXPR,
     EOT_OBJECT,
     EOT_LOCAL,
     EOT_OUTER,
@@ -509,7 +509,7 @@ public:
             else if ((pos = _fs->GetOuterVariable(id)) != -1) {
                 if (!skip_get) {
                     _fs->AddInstruction(_OP_GETOUTER, _fs->PushTarget(), pos);
-                    return EOT_NONE;
+                    return EOT_EXPR;
                 }
                 else {
                     outer_pos = pos;
@@ -546,7 +546,7 @@ public:
                     case OT_BOOL: _fs->AddInstruction(_OP_LOADBOOL, tgt, _integer(constval)); break;
                     default: _fs->AddInstruction(_OP_LOAD, tgt, _fs->GetConstant(constval)); break;
                 }
-                return EOT_NONE;
+                return EOT_EXPR;
             }
             else {
                 /* Handle a non-local variable, aka a field. Push the 'this' pointer on
@@ -571,7 +571,7 @@ public:
             processChildren(ast);
         }
 
-        return EOT_NONE;
+        return EOT_EXPR;
     }
 
 
@@ -1000,7 +1000,7 @@ public:
         assert(ast.nodes[0]->name == "Factor" || ast.nodes[0]->name == "LOADROOT");
         size_t nNodes = ast.nodes.size();
 
-        ExprObjType objType = EOT_NONE;
+        ExprObjType objType = EOT_EXPR;
 
         const STL::string strNone;
 
@@ -1064,7 +1064,7 @@ public:
                     Emit2ArgsOP(_OP_GET, flags);
                 }
                 if (objType == EOT_BASE)
-                    objType = EOT_NONE;
+                    objType = EOT_EXPR;
                 else
                     objType = EOT_OBJECT;
             }
@@ -1119,7 +1119,7 @@ public:
                     assert(target < 255);
                     _fs->AddInstruction(nullcall ? _OP_NULLCALL : _OP_CALL, target, closure, stackbase, nargs);
                 }
-                objType = EOT_NONE;
+                objType = EOT_EXPR;
             }
             else if (node.name == "ExprOperator") {
                 assert(iPos<ast.nodes.size()-1);
@@ -1149,7 +1149,7 @@ public:
                             _fs->AddInstruction(_OP_SETOUTER, dst, outer_pos, src);
                             break;
                         }
-                        case EOT_NONE:
+                        case EOT_EXPR:
                             Error(_SC("Can't assign to an expression"));
                     }
                 }
@@ -1165,12 +1165,12 @@ public:
                 }
                 else
                     Error("Operator %s is not supported", STL::string(nodeOp->token).c_str());
-                objType = EOT_NONE;
+                objType = EOT_EXPR;
             }
             else if (node.name == "IncrDecrOp") {
                 SQInteger diff = (node.token=="--") ? -1 : 1;
                 switch (objType) {
-                    case EOT_NONE:
+                    case EOT_EXPR:
                         Error(_SC("can't '++' or '--' an expression"));
                         break;
                     case EOT_OBJECT:
@@ -1192,7 +1192,7 @@ public:
                         break;
                     }
                 }
-                objType = EOT_NONE;
+                objType = EOT_EXPR;
             }
         }
         return objType;
@@ -1648,7 +1648,7 @@ public:
         SQInteger outer_pos = -888;
 
         ExprObjType objType = ChainExpr(*ast.nodes[1], outer_pos, true);
-        if (objType==EOT_NONE) {
+        if (objType==EOT_EXPR) {
             Error(_SC("can't '++' or '--' an expression"));
         }
         else if (objType==EOT_OBJECT || objType==EOT_BASE) {
@@ -1674,7 +1674,7 @@ public:
 
         SQInteger outer_pos = -888;
         ExprObjType objType = ChainExpr(*ast.nodes[0], outer_pos, true);
-        if (objType==EOT_NONE)
+        if (objType==EOT_EXPR)
             Error(_SC("can't delete an expression"));
         else if (objType==EOT_LOCAL || objType==EOT_OUTER)
             Error(_SC("cannot delete an (outer) local"));
