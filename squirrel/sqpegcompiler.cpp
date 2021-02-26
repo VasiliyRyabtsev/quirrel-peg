@@ -2112,7 +2112,7 @@ SQPegParser* sq_createpegparser(SQAllocContext alloc_ctx)
     }
 
     pp->parser.enable_ast();
-    pp->parser.enable_packrat_parsing();
+    //pp->parser.enable_packrat_parsing();
     return pp;
 }
 
