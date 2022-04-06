@@ -26,6 +26,9 @@ struct SQExpState {
   SQInteger  etype;       /* expr. type; one of EXPR, OBJECT, BASE, OUTER or LOCAL */
   SQInteger  epos;        /* expr. location on stack; -1 for OBJECT and BASE */
   bool       donot_get;   /* signal not to deref the next value */
+  bool       is_assignable_var; // for LOCAL and OUTER
+
+  bool isBinding() { return (etype==LOCAL || etype==OUTER) && !is_assignable_var; }
 };
 
 #ifndef SQ_LINE_INFO_IN_STRUCTURES
@@ -96,7 +99,7 @@ enum SQExpressionContext
 class SQCompiler
 {
 public:
-    SQCompiler(SQVM *v, SQLEXREADFUNC rg, SQUserPointer up, const SQChar* sourcename, bool raiseerror, bool lineinfo) :
+    SQCompiler(SQVM *v, SQLEXREADFUNC rg, SQUserPointer up, const HSQOBJECT *bindings, const SQChar* sourcename, bool raiseerror, bool lineinfo) :
       _lex(_ss(v)),
       _scopedconsts(_ss(v)->_alloc_ctx)
     {
@@ -109,6 +112,12 @@ public:
         _scope.stacksize = 0;
         _compilererror[0] = _SC('\0');
         _expression_context = SQE_REGULAR;
+        _num_initial_bindings = bindings ? 1 : 0;
+
+        if (bindings) {
+            assert(sq_type(*bindings)==OT_TABLE);
+            _scopedconsts.push_back(*bindings);
+        }
     }
 
     bool IsConstant(const SQObject &name,SQObject &e)
@@ -127,6 +136,8 @@ public:
             SQObjectPtr &tbl = _scopedconsts[i];
             if (!sq_isnull(tbl) && _table(tbl)->Get(name,val)) {
                 e = val;
+                if (tbl._flags & SQOBJ_FLAG_IMMUTABLE)
+                    e._flags |= SQOBJ_FLAG_IMMUTABLE;
                 return true;
             }
         }
@@ -208,6 +219,10 @@ public:
             setFlags = LF_NO_PLUS_CONCAT;
         else if (scstrcmp(sval, _SC("allow-plus-concat")) == 0)
             clearFlags = LF_NO_PLUS_CONCAT;
+        else if (scstrcmp(sval, _SC("explicit-this")) == 0)
+            setFlags = LF_EXPLICIT_THIS;
+        else if (scstrcmp(sval, _SC("implicit-this")) == 0)
+            clearFlags = LF_EXPLICIT_THIS;
         else
             Error(_SC("unsupported directive"));
 
@@ -334,7 +349,7 @@ public:
             _vm->_lasterror = SQString::Create(_ss(_vm), _compilererror, -1);
             return false;
         }
-        assert(_scopedconsts.size()==1);
+        assert(_scopedconsts.size() == 1 + _num_initial_bindings);
         return true;
     }
     void Statements()
@@ -355,7 +370,10 @@ public:
         case TK_FOR:        ForStatement();         break;
         case TK_FOREACH:    ForEachStatement();     break;
         case TK_SWITCH: SwitchStatement();      break;
-        case TK_LOCAL:      LocalDeclStatement();   break;
+        case TK_LOCAL:
+        case TK_LET:
+            LocalDeclStatement(_token == TK_LOCAL);
+            break;
         case TK_RETURN:
         case TK_YIELD: {
             SQOpcode op;
@@ -546,8 +564,9 @@ public:
             SQInteger op = _token;
             SQInteger ds = _es.etype;
             SQInteger pos = _es.epos;
-            if(ds == EXPR) Error(_SC("can't assign expression"));
+            if(ds == EXPR) Error(_SC("can't assign to expression"));
             else if(ds == BASE) Error(_SC("'base' cannot be modified"));
+            else if (_es.isBinding() && _token!=TK_INEXPR_ASSIGNMENT) Error(_SC("can't assign to binding"));
             Lex(); Expression(SQE_RVALUE);
 
             switch(op){
@@ -893,6 +912,8 @@ public:
                     if(IsEndOfStatement()) return;
                     SQInteger diff = (_token==TK_MINUSMINUS) ? -1 : 1;
                     Lex();
+                    if (_es.isBinding())
+                        Error(_SC("can't '++' or '--' a binding"));
                     switch(_es.etype)
                     {
                         case EXPR: Error(_SC("can't '++' or '--' an expression")); break;
@@ -963,8 +984,8 @@ public:
     }
     SQInteger Factor()
     {
-        if (_token == TK_LOCAL && (_expression_context == SQE_IF
-                                || _expression_context == SQE_SWITCH || _expression_context == SQE_LOOP_CONDITION))
+        if ((_token == TK_LOCAL || _token == TK_LET)
+            && (_expression_context == SQE_IF || _expression_context == SQE_SWITCH || _expression_context == SQE_LOOP_CONDITION))
         {
             Lex();
             if (_token != TK_IDENTIFIER)
@@ -972,7 +993,7 @@ public:
 
             SQObject id = _fs->CreateString(_lex._svalue);
             CheckDuplicateLocalIdentifier(id, _SC("In-expr local"), false);
-            _fs->PushLocalVariable(id);
+            _fs->PushLocalVariable(id, _token == TK_LOCAL);
             SQInteger res = Factor();
             if (_token != TK_INEXPR_ASSIGNMENT)
                 Error(_SC(":= expected"));
@@ -996,9 +1017,10 @@ public:
         case TK_IDENTIFIER:
         case TK_CONSTRUCTOR:
         case TK_THIS:{
+                bool assignable = false;
                 if (_token == TK_IDENTIFIER && sq_isstring(_fs->_name)
                     && scstrcmp(_stringval(_fs->_name), _lex._svalue)==0
-                    && _fs->GetLocalVariable(_fs->_name) == -1)
+                    && _fs->GetLocalVariable(_fs->_name, assignable) == -1)
                 {
                     _fs->AddInstruction(_OP_LOADCALLEE, _fs->PushTarget());
                     Lex();
@@ -1020,14 +1042,15 @@ public:
 
                 SQInteger pos = -1;
                 Lex();
-                if((pos = _fs->GetLocalVariable(id)) != -1) {
+                if((pos = _fs->GetLocalVariable(id, assignable)) != -1) {
                     /* Handle a local variable (includes 'this') */
                     _fs->PushTarget(pos);
                     _es.etype  = LOCAL;
                     _es.epos   = pos;
+                    _es.is_assignable_var = assignable;
                 }
 
-                else if((pos = _fs->GetOuterVariable(id)) != -1) {
+                else if((pos = _fs->GetOuterVariable(id, assignable)) != -1) {
                     /* Handle a free var */
                     if(NeedGet()) {
                         _es.epos  = _fs->PushTarget();
@@ -1037,23 +1060,20 @@ public:
                     else {
                         _es.etype = OUTER;
                         _es.epos  = pos;
+                        _es.is_assignable_var = assignable;
                     }
                 }
 
                 else if(IsConstant(id, constant)) {
                     /* Handle named constant */
-                    SQObjectPtr constval;
-                    SQObject    constid;
-                    if(sq_type(constant) == OT_TABLE) {
+                    SQObjectPtr constval = constant;
+                    while (sq_type(constval) == OT_TABLE && (sq_objflags(constval) & SQOBJ_FLAG_IMMUTABLE) && _token==_SC('.')) {
                         Expect('.');
-                        constid = Expect(TK_IDENTIFIER);
-                        if(!_table(constant)->Get(constid, constval)) {
+                        SQObject constid = Expect(TK_IDENTIFIER);
+                        if(!_table(constval)->Get(constid, constval)) {
                             constval.Null();
-                            Error(_SC("invalid constant [%s.%s]"), _stringval(id), _stringval(constid));
+                            Error(_SC("invalid enum [no '%s' field in '%s']"), _stringval(constid), _stringval(id));
                         }
-                    }
-                    else {
-                        constval = constant;
                     }
                     _es.epos = _fs->PushTarget();
 
@@ -1074,6 +1094,9 @@ public:
                     * for the latter. If we are not using the variable as a dref expr, generate
                     * the _OP_GET instruction.
                     */
+                    if (_fs->lang_features & LF_EXPLICIT_THIS)
+                        Error(_SC("Unknown variable [%s]"), _stringval(id));
+
                     _fs->PushTarget(0);
                     _fs->AddInstruction(_OP_LOAD, _fs->PushTarget(), _fs->GetConstant(id));
                     if(NeedGet()) {
@@ -1304,12 +1327,14 @@ public:
                 _fs->AddInstruction(_OP_LOAD, _fs->PushTarget(), _fs->GetConstant(id));
 
                 if ((otype == NOT_TABLE) &&
-                    (_token == TK_IDENTIFIER || _token == separator || _token == terminator || _token == _SC('['))) {
+                    (_token == TK_IDENTIFIER || _token == separator || _token == terminator || _token == _SC('[')
+                        || _token == TK_FUNCTION)) {
                     SQObject constant;
                     SQInteger pos = -1;
-                    if((pos = _fs->GetLocalVariable(id)) != -1)
+                    bool assignable = false;
+                    if((pos = _fs->GetLocalVariable(id, assignable)) != -1)
                         _fs->PushTarget(pos);
-                    else if((pos = _fs->GetOuterVariable(id)) != -1)
+                    else if((pos = _fs->GetOuterVariable(id,assignable)) != -1)
                         _fs->AddInstruction(_OP_GETOUTER, _fs->PushTarget(), pos);
                     else if(IsConstant(id, constant))
                         _fs->AddInstruction(_OP_LOAD,_fs->PushTarget(),_fs->GetConstant(constant));
@@ -1340,16 +1365,17 @@ public:
     }
     void CheckDuplicateLocalIdentifier(const SQObject &name, const SQChar *desc, bool ignore_global_consts)
     {
-        if (_fs->GetLocalVariable(name) >= 0)
+        bool assignable = false;
+        if (_fs->GetLocalVariable(name, assignable) >= 0)
             Error(_SC("%s name '%s' conflicts with existing local variable"), desc, _string(name)->_val);
         if (_stringval(name) == _stringval(_fs->_name))
             Error(_SC("%s name '%s' conflicts with function name"), desc, _stringval(name));
 
         SQObject constant;
         if (ignore_global_consts ? IsLocalConstant(name, constant) : IsConstant(name, constant))
-            Error(_SC("%s name '%s' conflicts with existing constant/enum"), desc, _stringval(name));
+            Error(_SC("%s name '%s' conflicts with existing constant/enum/import"), desc, _stringval(name));
     }
-    void LocalDeclStatement()
+    void LocalDeclStatement(bool assignable)
     {
         SQObject varname;
         Lex();
@@ -1361,7 +1387,7 @@ public:
             CreateFunction(varname,false);
             _fs->AddInstruction(_OP_CLOSURE, _fs->PushTarget(), _fs->_functions.size() - 1, 0);
             _fs->PopTarget();
-            _fs->PushLocalVariable(varname);
+            _fs->PushLocalVariable(varname, assignable);
             return;
         } else if (_token == TK_CLASS) {
             Lex();
@@ -1369,7 +1395,7 @@ public:
             CheckDuplicateLocalIdentifier(varname, _SC("Class"), false);
             ClassExp();
             _fs->PopTarget();
-            _fs->PushLocalVariable(varname);
+            _fs->PushLocalVariable(varname, assignable);
             return;
         }
 
@@ -1385,7 +1411,7 @@ public:
 
         do {
             varname = Expect(TK_IDENTIFIER);
-            CheckDuplicateLocalIdentifier(varname, _SC("Local variable"), false);
+            CheckDuplicateLocalIdentifier(varname, assignable ? _SC("Local variable") : _SC("Named binding"), false);
             if(_token == _SC('=')) {
                 Lex(); Expression(SQE_REGULAR);
                 SQInteger src = _fs->PopTarget();
@@ -1394,11 +1420,13 @@ public:
                 flags.push_back(OP_GET_FLAG_NO_ERROR | OP_GET_FLAG_KEEP_VAL);
             }
             else{
+                if (!assignable && !destructurer)
+                    Error(_SC("Binding '%s' must be initialized"), _stringval(varname));
                 _fs->AddInstruction(_OP_LOADNULLS, _fs->PushTarget(),1);
                 flags.push_back(0);
             }
             targets.push_back(_fs->PopTarget());
-            _fs->PushLocalVariable(varname);
+            _fs->PushLocalVariable(varname, assignable);
             names.push_back(varname);
             if(_token == _SC(','))
                 Lex();
@@ -1545,7 +1573,7 @@ public:
         Lex();
         BEGIN_SCOPE();
         Expect(_SC('('));
-        if(_token == TK_LOCAL) LocalDeclStatement();
+        if(_token == TK_LOCAL) LocalDeclStatement(true);
         else if(_token != _SC(';')){
             CommaExpr(SQE_REGULAR);
             _fs->PopTarget();
@@ -1608,13 +1636,13 @@ public:
         Expression(SQE_RVALUE); Expect(_SC(')'));
         SQInteger container = _fs->TopTarget();
         //push the index local var
-        SQInteger indexpos = _fs->PushLocalVariable(idxname);
+        SQInteger indexpos = _fs->PushLocalVariable(idxname, false);
         _fs->AddInstruction(_OP_LOADNULLS, indexpos,1);
         //push the value local var
-        SQInteger valuepos = _fs->PushLocalVariable(valname);
+        SQInteger valuepos = _fs->PushLocalVariable(valname, false);
         _fs->AddInstruction(_OP_LOADNULLS, valuepos,1);
         //push reference index
-        SQInteger itrpos = _fs->PushLocalVariable(_fs->CreateString(_SC("@ITERATOR@"))); //use invalid id to make it inaccessible
+        SQInteger itrpos = _fs->PushLocalVariable(_fs->CreateString(_SC("@ITERATOR@")), false); //use invalid id to make it inaccessible
         _fs->AddInstruction(_OP_LOADNULLS, itrpos,1);
         SQInteger jmppos = _fs->GetCurrentPos();
         _fs->AddInstruction(_OP_FOREACH, container, 0, indexpos);
@@ -1725,6 +1753,7 @@ public:
     {
         SQObject val;
         val._type = OT_NULL; val._unVal.nInteger = 0; //shut up GCC 4.x
+        val._flags = 0;
         switch(_token) {
             case TK_INTEGER:
                 val._type = OT_INTEGER;
@@ -1800,6 +1829,7 @@ public:
         Expect(_SC('{'));
 
         SQObject table = _fs->CreateTable();
+        table._flags = SQOBJ_FLAG_IMMUTABLE;
         SQInteger nval = 0;
         while(_token != _SC('}')) {
             SQObject key = Expect(TK_IDENTIFIER);
@@ -1811,6 +1841,7 @@ public:
             else {
                 val._type = OT_INTEGER;
                 val._unVal.nInteger = nval++;
+                val._flags = 0;
             }
             _table(table)->NewSlot(SQObjectPtr(key),SQObjectPtr(val));
             if(_token == ',') Lex();
@@ -1847,7 +1878,7 @@ public:
         Expect(TK_CATCH); Expect(_SC('(')); exid = Expect(TK_IDENTIFIER); Expect(_SC(')'));
         {
             BEGIN_SCOPE();
-            SQInteger ex_target = _fs->PushLocalVariable(exid);
+            SQInteger ex_target = _fs->PushLocalVariable(exid, false);
             _fs->SetInstructionParam(trappos, 0, ex_target);
             Statement();
             _fs->SetInstructionParams(jmppos, 0, (_fs->GetCurrentPos() - jmppos), 0);
@@ -1855,7 +1886,7 @@ public:
         }
     }
 
-    SQObjectPtr generateSurrogateFunctionName()
+    SQObject generateSurrogateFunctionName()
     {
         const SQChar * fileName = (sq_type(_sourcename) == OT_STRING) ? _stringval(_sourcename) : _SC("unknown");
         int lineNum = int(_lex._currentline);
@@ -1870,7 +1901,7 @@ public:
     void FunctionExp(SQInteger ftype,bool lambda = false)
     {
         Lex();
-        SQObjectPtr functionName = (_token == TK_IDENTIFIER) ? Expect(TK_IDENTIFIER) : generateSurrogateFunctionName();
+        SQObject functionName = (_token == TK_IDENTIFIER) ? Expect(TK_IDENTIFIER) : generateSurrogateFunctionName();
         Expect(_SC('('));
 
         CreateFunction(functionName, lambda);
@@ -1917,6 +1948,9 @@ public:
         }
         else if(_es.etype==OBJECT || _es.etype==BASE) {
             Emit2ArgsOP(_OP_INC, diff);
+        }
+        else if (_es.isBinding()) {
+            Error(_SC("can't '++' or '--' a binding"));
         }
         else if(_es.etype==LOCAL) {
             SQInteger src = _fs->TopTarget();
@@ -1977,6 +2011,8 @@ public:
             Expression(SQE_REGULAR);
             _fs->AddInstruction(_OP_RETURN, 1, _fs->PopTarget());}
         else {
+            if (_token != '{')
+                Error(_SC("'{' expected"));
             Statement(false);
         }
         funcstate->AddLineInfos(_lex._prevtoken == _SC('\n')?_lex._lasttokenline:_lex._currentline, _lineinfo, true);
@@ -2057,11 +2093,12 @@ private:
     jmp_buf _errorjmp;
     SQVM *_vm;
     SQObjectPtrVec _scopedconsts;
+    SQUnsignedInteger _num_initial_bindings;
 };
 
-bool Compile(SQVM *vm,SQLEXREADFUNC rg, SQUserPointer up, const SQChar *sourcename, SQObjectPtr &out, bool raiseerror, bool lineinfo)
+bool Compile(SQVM *vm,SQLEXREADFUNC rg, SQUserPointer up, const HSQOBJECT *bindings, const SQChar *sourcename, SQObjectPtr &out, bool raiseerror, bool lineinfo)
 {
-    SQCompiler p(vm, rg, up, sourcename, raiseerror, lineinfo);
+    SQCompiler p(vm, rg, up, bindings, sourcename, raiseerror, lineinfo);
     return p.Compile(out);
 }
 

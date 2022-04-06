@@ -75,6 +75,7 @@ void SQLexer::Init(SQSharedState *ss, SQLEXREADFUNC rg, SQUserPointer up,Compile
     ADD_KEYWORD(rawcall, TK_RAWCALL);
     ADD_KEYWORD(global, TK_GLOBAL);
     ADD_KEYWORD(not, TK_NOT);
+    ADD_KEYWORD(let, TK_LET);
 
 
     macroState.reset();
@@ -271,7 +272,7 @@ bool SQLexer::ProcessReaderMacro()
     }
 
     if (macroState.macroParams.size() != 0) {
-        append_string_to_vec(macroState.macroStr, ".subst(");
+        append_string_to_vec(macroState.macroStr, _SC(".subst("));
 
         for (SQUnsignedInteger i = 0; i < macroState.macroParams.size(); i++)
             macroState.macroStr.push_back(macroState.macroParams[i]);
@@ -702,6 +703,7 @@ SQInteger isexponent(SQInteger c) { return c == 'e' || c=='E'; }
 
 
 #define MAX_HEX_DIGITS (sizeof(SQInteger)*2)
+#define NUM_NEXT() { do NEXT() while (CUR_CHAR==_SC('_')); }
 SQInteger SQLexer::ReadNumber()
 {
 #define TINT 1
@@ -712,28 +714,28 @@ SQInteger SQLexer::ReadNumber()
     SQInteger type = TINT, firstchar = CUR_CHAR;
     SQChar *sTemp;
     INIT_TEMP_STRING();
-    NEXT();
+    NUM_NEXT();
     if(firstchar == _SC('0') && (toupper(CUR_CHAR) == _SC('X') || scisodigit(CUR_CHAR)) ) {
         if(scisodigit(CUR_CHAR)) {
             type = TOCTAL;
             while(scisodigit(CUR_CHAR)) {
                 APPEND_CHAR(CUR_CHAR);
-                NEXT();
+                NUM_NEXT();
             }
             if(scisdigit(CUR_CHAR)) Error(_SC("invalid octal number"));
         }
         else {
-            NEXT();
+            NUM_NEXT();
             type = THEX;
             while(isxdigit(CUR_CHAR)) {
                 APPEND_CHAR(CUR_CHAR);
-                NEXT();
+                NUM_NEXT();
             }
             if(_longstr.size() > MAX_HEX_DIGITS) Error(_SC("too many digits for an Hex number"));
         }
     }
     else {
-        APPEND_CHAR((int)firstchar);
+        APPEND_CHAR((SQChar)firstchar);
         while (CUR_CHAR == _SC('.') || scisdigit(CUR_CHAR) || isexponent(CUR_CHAR)) {
             if(CUR_CHAR == _SC('.') || isexponent(CUR_CHAR)) type = TFLOAT;
             if(isexponent(CUR_CHAR)) {
@@ -749,7 +751,7 @@ SQInteger SQLexer::ReadNumber()
             }
 
             APPEND_CHAR(CUR_CHAR);
-            NEXT();
+            NUM_NEXT();
         }
     }
     TERMINATE_BUFFER();

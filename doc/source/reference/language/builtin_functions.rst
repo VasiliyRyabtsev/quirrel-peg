@@ -30,8 +30,14 @@ returns the currently running closure
 
 .. sq:function:: setdebughook(hook_func)
 
-
 sets the debug hook
+
+hook_func should have follow signature
+  hook_func(hook_type:integer, source_file:string, line_num:integer, func_name:string)
+
+hook_type can be 'l' - line, 'r' - return, 'c' - call or 'x' for VM shutdown
+
+call of debughook for each line performed only when debuginfo is enabled
 
 .. sq:function:: enabledebuginfo(enable)
 
@@ -41,17 +47,9 @@ enable/disable the debug line information generation at compile time. enable != 
 
 returns the root table of the VM.
 
-.. sq:function:: setroottable(table)
-
-sets the root table of the VM. And returns the previous root table.
-
 .. sq:function:: getconsttable()
 
 returns the const table of the VM.
-
-.. sq:function:: setconsttable(table)
-
-sets the const table of the VM; returns the previous const table.
 
 .. sq:function:: assert(exp, [message])
 
@@ -61,11 +59,19 @@ unnecessary string formatting when it is not needed.
 
 .. sq:function:: print(x)
 
-prints x to the standard output
+prints x calling host app printing function set by (:ref:`sq_setprintfunc <sq_setprintfunc>`) call
+
+.. sq:function:: println(x)
+
+prints x adding line feed ('\n') to the resulting string
 
 .. sq:function:: error(x)
 
-prints x in the standard error output
+prints x calling host app error printing function set by (:ref:`sq_setprintfunc <sq_setprintfunc>`) call
+
+.. sq:function:: errorln(x)
+
+same as error(x) but adds line feed ('\n') to the resulting string
 
 .. sq:function:: compilestring(string,[buffername])
 
@@ -126,25 +132,26 @@ returns value limited by provided min-max range
 
 creates a new cooperative thread object(coroutine) and returns it
 
-.. sq:data:: _versionnumber_
+.. sq:function:: freeze(x)
 
-integer values describing the version of VM and compiler. e.g. for Quirrel 4.0.0 this value will be 400
+returns immutable reference to given object.
+Throws an error if argument is of POD type (to help prevent errors).
 
-.. sq:data:: _version_
+.. sq:function:: getobjflags(x)
 
-string values describing the version of VM and compiler.
+Given object handle, return its flags that may be:
 
-.. sq:data:: _charsize_
+  * 0 - no special flags
+  * SQOBJ_FLAG_IMMUTABLE - bit set if the object handle is immutable
 
-size in bytes of the internal VM representation for characters(1 for ASCII builds 2 for UNICODE builds).
+.. sq:function:: getbuildinfo(x)
 
-.. sq:data:: _intsize_
+returns table containing information on VM build parameters.
 
-size in bytes of the internal VM representation for integers(4 for 32bits builds 8 for 64bits builds).
-
-.. sq:data:: _floatsize_
-
-size in bytes of the internal VM representation for floats(4 for single precision builds 8 for double precision builds).
+  * **version** - string values describing the version of VM and compiler.
+  * **charsize** - size in bytes of the internal VM representation for characters(1 for ASCII builds 2 for UNICODE builds).
+  * **intsize** - size in bytes of the internal VM representation for integers(4 for 32bits builds 8 for 64bits builds).
+  * **floatsize** - size in bytes of the internal VM representation for floats(4 for single precision builds 8 for double precision builds).
 
 -----------------
 Default delegates
@@ -359,7 +366,7 @@ tries to get a value from the slot 'key' without employing delegation
 Sets the slot 'key' with the value 'val' without employing delegation. If the slot does not exists, it will be created. Returns table itself.
 
 
-.. sq:function:: table.rawdelete()
+.. sq:function:: table.rawdelete(key)
 
 Deletes the slot key without employing delegation and returns its value. If the slot does not exists, returns null.
 

@@ -56,6 +56,7 @@ HSQUIRRELVM sq_open(SQInteger initialstacksize)
     SQVM *v = (SQVM *)SQ_MALLOC(allocctx, sizeof(SQVM));
     new (v) SQVM(ss);
     ss->_root_vm = v;
+    sq_vm_assign_to_alloc_context(allocctx, v);
     if(v->Init(NULL, initialstacksize)) {
         return v;
     } else {
@@ -136,17 +137,13 @@ void sq_close(HSQUIRRELVM v)
     sq_vm_destroy_alloc_context(&allocctx);
 }
 
-SQInteger sq_getversion()
-{
-    return SQUIRREL_VERSION_NUMBER;
-}
-
-SQRESULT sq_compile(HSQUIRRELVM v,SQLEXREADFUNC read,SQUserPointer p,const SQChar *sourcename,SQBool raiseerror)
+SQRESULT sq_compile(HSQUIRRELVM v,SQLEXREADFUNC read,SQUserPointer p,const SQChar *sourcename,SQBool raiseerror,const HSQOBJECT *bindings)
 {
     SQObjectPtr o;
 #ifndef NO_COMPILER
-    if(Compile(v, read, p, sourcename, o, raiseerror?true:false, _ss(v)->_debuginfo)) {
-        v->Push(SQClosure::Create(_ss(v), _funcproto(o), _table(v->_roottable)->GetWeakRef(_ss(v)->_alloc_ctx, OT_TABLE)));
+    if(Compile(v, read, p, bindings, sourcename, o, raiseerror?true:false, _ss(v)->_debuginfo)) {
+        v->Push(SQClosure::Create(_ss(v), _funcproto(o),
+                _table(v->_roottable)->GetWeakRef(_ss(v)->_alloc_ctx, OT_TABLE, 0)));
         return SQ_OK;
     }
     return SQ_ERROR;
@@ -164,6 +161,16 @@ void sq_enablevartrace(HSQUIRRELVM v, SQBool enable)
 {
     _ss(v)->_varTraceEnabled = enable ? true : false;
 }
+
+SQBool sq_isvartracesupported()
+{
+#if SQ_VAR_TRACE_ENABLED == 1
+    return SQTrue;
+#else
+    return SQFalse;
+#endif
+}
+
 
 void sq_enabledebuginfo(HSQUIRRELVM v, SQBool enable)
 {
@@ -486,7 +493,7 @@ SQRESULT sq_bindenv(HSQUIRRELVM v,SQInteger idx)
         !sq_isclass(env) &&
         !sq_isinstance(env))
         return sq_throwerror(v,_SC("invalid environment"));
-    SQWeakRef *w = _refcounted(env)->GetWeakRef(_ss(v)->_alloc_ctx, sq_type(env));
+    SQWeakRef *w = _refcounted(env)->GetWeakRef(_ss(v)->_alloc_ctx, sq_type(env), env._flags);
     SQObjectPtr ret;
     if(sq_isclosure(o)) {
         SQClosure *c = _closure(o)->Clone();
@@ -533,7 +540,7 @@ SQRESULT sq_setclosureroot(HSQUIRRELVM v,SQInteger idx)
     SQObject o = stack_get(v, -1);
     if(!sq_isclosure(c)) return sq_throwerror(v, _SC("closure expected"));
     if(sq_istable(o)) {
-        _closure(c)->SetRoot(_table(o)->GetWeakRef(_ss(v)->_alloc_ctx, OT_TABLE));
+        _closure(c)->SetRoot(_table(o)->GetWeakRef(_ss(v)->_alloc_ctx, OT_TABLE, o._flags));
         v->Pop();
         return SQ_OK;
     }
@@ -897,10 +904,15 @@ SQRESULT sq_newslot(HSQUIRRELVM v, SQInteger idx, SQBool bstatic)
     if(sq_type(self) == OT_TABLE || sq_type(self) == OT_CLASS) {
         SQObjectPtr &key = v->GetUp(-2);
         if(sq_type(key) == OT_NULL) return sq_throwerror(v, _SC("null is not a valid key"));
-        v->NewSlot(self, key, v->GetUp(-1),bstatic?true:false);
+        if (!v->NewSlot(self, key, v->GetUp(-1),bstatic?true:false))
+            return SQ_ERROR;
         v->Pop(2);
+        return SQ_OK;
     }
-    return SQ_OK;
+    else {
+        v->Raise_Error(_SC("cannot add slot to '%s'"), GetTypeName(self));
+        return SQ_ERROR;
+    }
 }
 
 SQRESULT sq_deleteslot(HSQUIRRELVM v,SQInteger idx,SQBool pushval)
@@ -938,6 +950,12 @@ SQRESULT sq_rawset(HSQUIRRELVM v,SQInteger idx)
         v->Pop(2);
         return sq_throwerror(v, _SC("null key"));
     }
+
+    if (self._flags & SQOBJ_FLAG_IMMUTABLE) {
+        v->Raise_Error(_SC("trying to modify immutable '%s'"),GetTypeName(self));
+        return SQ_ERROR;
+    }
+
     switch(sq_type(self)) {
     case OT_TABLE:
         _table(self)->NewSlot(key, v->GetUp(-1));
@@ -1032,6 +1050,12 @@ SQRESULT sq_rawdeleteslot(HSQUIRRELVM v,SQInteger idx,SQBool pushval)
     sq_aux_paramscheck(v, 2);
     SQObjectPtr *self;
     _GETSAFE_OBJ(v, idx, OT_TABLE,self);
+
+    if (self->_flags & SQOBJ_FLAG_IMMUTABLE) {
+        v->Raise_Error(_SC("trying to modify immutable '%s'"),GetTypeName(*self));
+        return SQ_ERROR;
+    }
+
     SQObjectPtr &key = v->GetUp(-1);
     SQObjectPtr t;
     if(_table(*self)->Get(key,t)) {
@@ -1172,7 +1196,7 @@ void sq_pushobject(HSQUIRRELVM v,HSQOBJECT obj)
 
 void sq_resetobject(HSQOBJECT *po)
 {
-    po->_unVal.raw=0;po->_type=OT_NULL;
+    po->_unVal.raw=0;po->_type=OT_NULL;po->_flags=0;
 }
 
 SQRESULT sq_throwerror(HSQUIRRELVM v,const SQChar *err)
@@ -1536,7 +1560,7 @@ void sq_weakref(HSQUIRRELVM v,SQInteger idx)
 {
     SQObject &o=stack_get(v,idx);
     if(ISREFCOUNTED(sq_type(o))) {
-        v->Push(_refcounted(o)->GetWeakRef(_ss(v)->_alloc_ctx, sq_type(o)));
+        v->Push(_refcounted(o)->GetWeakRef(_ss(v)->_alloc_ctx, sq_type(o), o._flags));
         return;
     }
     v->Push(o);
@@ -1602,18 +1626,33 @@ SQInteger buf_lexfeed(SQUserPointer file)
     return buf->buf[buf->ptr++];
 }
 
-SQRESULT sq_compilebuffer(HSQUIRRELVM v,const SQChar *s,SQInteger size,const SQChar *sourcename,SQBool raiseerror) {
+SQRESULT sq_compilebuffer(HSQUIRRELVM v,const SQChar *s,SQInteger size,const SQChar *sourcename,SQBool raiseerror,const HSQOBJECT *bindings) {
     BufState buf;
     buf.buf = s;
     buf.size = size;
     buf.ptr = 0;
-    return sq_compile(v, buf_lexfeed, &buf, sourcename, raiseerror);
+    return sq_compile(v, buf_lexfeed, &buf, sourcename, raiseerror, bindings);
 }
 
 
 void sq_move(HSQUIRRELVM dest,HSQUIRRELVM src,SQInteger idx)
 {
     dest->Push(stack_get(src,idx));
+}
+
+SQRESULT sq_freeze(HSQUIRRELVM v, SQInteger idx)
+{
+    SQObjectPtr &o = stack_get(v, idx);
+    SQObjectType tp = sq_type(o);
+    if (tp != OT_ARRAY && tp != OT_TABLE && tp != OT_INSTANCE && tp != OT_CLASS && tp != OT_USERDATA) {
+        v->Raise_Error(_SC("Cannot freeze %s"), IdType2Name(tp));
+        return SQ_ERROR;
+    }
+
+    SQObjectPtr dst = o;
+    dst._flags |= SQOBJ_FLAG_IMMUTABLE;
+    v->Push(dst);
+    return SQ_OK;
 }
 
 void sq_setprintfunc(HSQUIRRELVM v, SQPRINTFUNCTION printfunc,SQPRINTFUNCTION errfunc)

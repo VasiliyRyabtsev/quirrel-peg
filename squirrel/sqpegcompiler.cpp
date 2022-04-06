@@ -18,6 +18,7 @@
 #define MAX_COMPILER_ERROR_LEN 256
 #define MAX_FUNCTION_NAME_LEN 128
 
+#define DUMMY_ASSIGNABLE true
 
 using namespace peg;
 
@@ -185,7 +186,8 @@ public:
 
     void CheckDuplicateLocalIdentifier(const SQObject &name, const SQChar *desc, bool ignore_global_consts)
     {
-        if (_fs->GetLocalVariable(name) >= 0)
+        bool assignable = false;
+        if (_fs->GetLocalVariable(name, assignable) >= 0)
             Error(_SC("%s name '%s' conflicts with existing local variable"), desc, _string(name)->_val);
         if (_stringval(name) == _stringval(_fs->_name))
             Error(_SC("%s name '%s' conflicts with function name"), desc, _stringval(name));
@@ -502,11 +504,12 @@ public:
             SQObjectPtr constant;
 
             SQInteger pos;
-            if ((pos = _fs->GetLocalVariable(id)) != -1) {// Handle a local variable (includes 'this')
+            bool assignable = false;
+            if ((pos = _fs->GetLocalVariable(id, assignable)) != -1) {// Handle a local variable (includes 'this')
                 _fs->PushTarget(pos);
                 return EOT_LOCAL;
             }
-            else if ((pos = _fs->GetOuterVariable(id)) != -1) {
+            else if ((pos = _fs->GetOuterVariable(id, assignable)) != -1) {
                 if (!skip_get) {
                     _fs->AddInstruction(_OP_GETOUTER, _fs->PushTarget(), pos);
                     return EOT_EXPR;
@@ -726,7 +729,7 @@ public:
         SQInteger tgt = _fs->PopTarget();
         if (targets)
             targets->push_back(tgt);
-        _fs->PushLocalVariable(varname);
+        _fs->PushLocalVariable(varname, DUMMY_ASSIGNABLE);
     }
 
     void LocalVarsDeclStmt(const Ast &ast) {
@@ -780,7 +783,7 @@ public:
         assert(*_stringval(varname));
         CheckDuplicateLocalIdentifier(varname, _SC("Local intra-expression variable"), false);
 
-        SQInteger varPos = _fs->PushLocalVariable(varname);
+        SQInteger varPos = _fs->PushLocalVariable(varname, DUMMY_ASSIGNABLE);
 
         processNode(ast.nodes[1]);
 
@@ -801,7 +804,7 @@ public:
         FuncDecl(*ast.nodes[1], varname, false);
 
         _fs->PopTarget();
-        _fs->PushLocalVariable(varname);
+        _fs->PushLocalVariable(varname, DUMMY_ASSIGNABLE);
     }
 
 
@@ -903,7 +906,7 @@ public:
         ClassInit(*ast.nodes[1]);
 
         _fs->PopTarget();
-        _fs->PushLocalVariable(varname);
+        _fs->PushLocalVariable(varname, DUMMY_ASSIGNABLE);
     }
 
 
@@ -1229,9 +1232,10 @@ public:
                 if (item->nodes.size()==1) {
                     SQInteger pos;
                     SQObjectPtr constant;
-                    if ((pos = _fs->GetLocalVariable(key)) != -1)
+                    bool assignable = false;
+                    if ((pos = _fs->GetLocalVariable(key, assignable)) != -1)
                         _fs->PushTarget(pos);
-                    else if ((pos = _fs->GetOuterVariable(key)) != -1)
+                    else if ((pos = _fs->GetOuterVariable(key, assignable)) != -1)
                         _fs->AddInstruction(_OP_GETOUTER, _fs->PushTarget(), pos);
                     else if (IsConstant(key, constant))
                         _fs->AddInstruction(_OP_LOAD,_fs->PushTarget(),_fs->GetConstant(constant));
@@ -1466,13 +1470,13 @@ public:
 
         SQInteger container = _fs->TopTarget();
         //push the index local var
-        SQInteger indexpos = _fs->PushLocalVariable(idxname);
+        SQInteger indexpos = _fs->PushLocalVariable(idxname, false);
         _fs->AddInstruction(_OP_LOADNULLS, indexpos,1);
         //push the value local var
-        SQInteger valuepos = _fs->PushLocalVariable(valname);
+        SQInteger valuepos = _fs->PushLocalVariable(valname, false);
         _fs->AddInstruction(_OP_LOADNULLS, valuepos,1);
         //push reference index
-        SQInteger itrpos = _fs->PushLocalVariable(_fs->CreateString(_SC("@ITERATOR@"))); //use invalid id to make it inaccessible
+        SQInteger itrpos = _fs->PushLocalVariable(_fs->CreateString(_SC("@ITERATOR@")), false); //use invalid id to make it inaccessible
         _fs->AddInstruction(_OP_LOADNULLS, itrpos,1);
         SQInteger jmppos = _fs->GetCurrentPos();
         _fs->AddInstruction(_OP_FOREACH, container, 0, indexpos);
@@ -1610,7 +1614,7 @@ public:
 
         {
             BEGIN_SCOPE();
-            SQInteger ex_target = _fs->PushLocalVariable(exid);
+            SQInteger ex_target = _fs->PushLocalVariable(exid, false);
             _fs->SetInstructionParam(trappos, 0, ex_target);
             processNode(ast.nodes[2]);
             _fs->SetInstructionParams(jmppos, 0, (_fs->GetCurrentPos() - jmppos), 0);
@@ -2128,7 +2132,7 @@ SQRESULT sq_compilepeg(HSQUIRRELVM v,const SQChar *s,SQInteger size,const SQChar
     SQObjectPtr o;
     if(CompilePeg(v, s, size, bindings, sourcename, o, raiseerror?true:false, _ss(v)->_debuginfo)) {
         v->Push(SQClosure::Create(_ss(v), _funcproto(o),
-                _table(v->_roottable)->GetWeakRef(_ss(v)->_alloc_ctx, OT_TABLE)));
+                _table(v->_roottable)->GetWeakRef(_ss(v)->_alloc_ctx, OT_TABLE, false)));
         return SQ_OK;
     }
     return SQ_ERROR;

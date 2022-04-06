@@ -7,6 +7,7 @@ static const char *grammar = R"(
         BreakStmt / ContinueStmt / ThrowStmt / TryCatchStmt /
         ConstStmt / EnumStmt /
         'local' LocalDeclStatement /
+        'let' LocalDeclStatement /
         FuncAtThisStmt / ClassAtThisStmt /
         Expression) ';'? / ';'
     )

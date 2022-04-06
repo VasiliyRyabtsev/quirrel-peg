@@ -90,7 +90,7 @@ struct SQRefCounted
     struct SQWeakRef *_weakref;
     SQRefCounted() { _uiRef = 0; _weakref = NULL; }
     virtual ~SQRefCounted();
-    SQWeakRef *GetWeakRef(SQAllocContext alloc_ctx, SQObjectType type);
+    SQWeakRef *GetWeakRef(SQAllocContext alloc_ctx, SQObjectType type, SQObjectFlags flags);
     virtual void Release()=0;
 
 };
@@ -156,14 +156,7 @@ struct SQObjectPtr;
 #define _userdataval(obj) ((SQUserPointer)sq_aligning((obj)._unVal.pUserData + 1))
 
 #define tofloat(num) ((sq_type(num)==OT_INTEGER)?(SQFloat)_integer(num):_float(num))
-#if SQ_LIMIT_FLOAT_TO_INT_CONVERSION
-//when we cast float to int64 on 32 bit platform it produces huge amount of imstructions
-//additionally, clang until 10.0 version couldn't make this code FPE safe, so it will raise FPE (on just reading -1 integer)
-//this define allows to trunk all floats to int32_t, which is faster on 32bit platforms and no FPE code is generated
-#define tointeger(num) ((sq_type(num)==OT_FLOAT)?(SQInteger)(int(_float(num))):_integer(num))
-#else
 #define tointeger(num) ((sq_type(num)==OT_FLOAT)?(SQInteger)_float(num):_integer(num))
-#endif
 /////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////
 #if defined(SQUSEDOUBLE) && !defined(_SQ64) || !defined(SQUSEDOUBLE) && defined(_SQ64)
@@ -177,6 +170,7 @@ struct SQObjectPtr;
     { \
         SQ_OBJECT_RAWINIT() \
         _type=type; \
+        _flags=0; \
         _unVal.sym = x; \
         assert(_unVal.pTable); \
         _unVal.pRefCounted->_uiRef++; \
@@ -188,6 +182,7 @@ struct SQObjectPtr;
         tOldType=_type; \
         unOldVal=_unVal; \
         _type = type; \
+        _flags = 0; \
         SQ_REFOBJECT_INIT() \
         _unVal.sym = x; \
         _unVal.pRefCounted->_uiRef++; \
@@ -200,12 +195,14 @@ struct SQObjectPtr;
     { \
         SQ_OBJECT_RAWINIT() \
         _type=type; \
+        _flags = 0; \
         _unVal.sym = x; \
     } \
     inline SQObjectPtr& operator=(_class x) \
     {  \
         __Release(_type,_unVal); \
         _type = type; \
+        _flags = 0; \
         SQ_OBJECT_RAWINIT() \
         _unVal.sym = x; \
         return *this; \
@@ -216,17 +213,20 @@ struct SQObjectPtr : public SQObject
     {
         SQ_OBJECT_RAWINIT()
         _type=OT_NULL;
+        _flags=0;
         _unVal.pUserPointer=NULL;
     }
     SQObjectPtr(const SQObjectPtr &o)
     {
         _type = o._type;
+        _flags = o._flags;
         _unVal = o._unVal;
         __AddRef(_type,_unVal);
     }
     SQObjectPtr(const SQObject &o)
     {
         _type = o._type;
+        _flags = o._flags;
         _unVal = o._unVal;
         __AddRef(_type,_unVal);
     }
@@ -252,6 +252,7 @@ struct SQObjectPtr : public SQObject
     {
         SQ_OBJECT_RAWINIT()
         _type = OT_BOOL;
+        _flags = 0;
         _unVal.nInteger = bBool?1:0;
     }
     inline SQObjectPtr& operator=(bool b)
@@ -259,6 +260,7 @@ struct SQObjectPtr : public SQObject
         __Release(_type,_unVal);
         SQ_OBJECT_RAWINIT()
         _type = OT_BOOL;
+        _flags = 0;
         _unVal.nInteger = b?1:0;
         return *this;
     }
@@ -276,6 +278,7 @@ struct SQObjectPtr : public SQObject
         unOldVal=_unVal;
         _unVal = obj._unVal;
         _type = obj._type;
+        _flags = obj._flags;
         __AddRef(_type,_unVal);
         __Release(tOldType,unOldVal);
         return *this;
@@ -288,6 +291,7 @@ struct SQObjectPtr : public SQObject
         unOldVal=_unVal;
         _unVal = obj._unVal;
         _type = obj._type;
+        _flags = obj._flags;
         __AddRef(_type,_unVal);
         __Release(tOldType,unOldVal);
         return *this;
@@ -297,6 +301,7 @@ struct SQObjectPtr : public SQObject
         SQObjectType tOldType = _type;
         SQObjectValue unOldVal = _unVal;
         _type = OT_NULL;
+        _flags = 0;
         _unVal.raw = (SQRawObjectVal)NULL;
         __Release(tOldType ,unOldVal);
     }
@@ -308,10 +313,14 @@ struct SQObjectPtr : public SQObject
 inline void _Swap(SQObject &a,SQObject &b)
 {
     SQObjectType tOldType = a._type;
+    SQObjectFlags fOldFlags = a._flags;
     SQObjectValue unOldVal = a._unVal;
+
     a._type = b._type;
+    a._flags = b._flags;
     a._unVal = b._unVal;
     b._type = tOldType;
+    b._flags = fOldFlags;
     b._unVal = unOldVal;
 }
 
@@ -338,10 +347,17 @@ struct SQCollectable : public SQRefCounted {
 #define INIT_CHAIN() {_next=NULL;_prev=NULL;_sharedstate=ss;}
 #else
 
+// Need this to keep SQSharedState pointer to access alloc_ctx
+// Otherwise, just use SQRefCounted as CHAINABLE_OBJ in the way it was initially
+struct SQRefCountedWithSharedState : public SQRefCounted
+{
+    SQSharedState *_sharedstate;
+};
 #define ADD_TO_CHAIN(chain,obj) ((void)0)
 #define REMOVE_FROM_CHAIN(chain,obj) ((void)0)
-#define CHAINABLE_OBJ SQRefCounted
-#define INIT_CHAIN() ((void)0)
+#define CHAINABLE_OBJ SQRefCountedWithSharedState
+#define INIT_CHAIN() {_sharedstate=ss;}
+
 #endif
 
 struct SQDelegable : public CHAINABLE_OBJ {

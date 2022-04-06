@@ -5,6 +5,9 @@ build/
 x86/
 x64/
 
+# CMake output
+build/
+
 # Folders created at documentation generation
 doc/build/
 

@@ -79,7 +79,6 @@ void PrintUsage()
 {
     scfprintf(stderr,_SC("usage: sq <options> <scriptpath [args]>.\n")
         _SC("Available options are:\n")
-        _SC("   -m              enable module support and run file as module\n")
         _SC("   -c              compiles the file to bytecode(default output 'out.cnut')\n")
         _SC("   -o              specifies output file for the -c option\n")
         _SC("   -c              compiles only\n")
@@ -94,7 +93,6 @@ void PrintUsage()
 //<<FIXME>> this func is a mess
 int getargs(HSQUIRRELVM v,int argc, char* argv[],SQInteger *retval)
 {
-    int i;
     int compiles_only = 0;
 	int run_as_module = 0;
     SQBool use_peg = SQFalse;
@@ -165,11 +163,6 @@ int getargs(HSQUIRRELVM v,int argc, char* argv[],SQInteger *retval)
 
             arg++;
 
-            //sq_pushstring(v,_SC("ARGS"),-1);
-            //sq_newarray(v,0);
-
-            //sq_createslot(v,-3);
-            //sq_pop(v,1);
             if(compiles_only) {
                 if(SQ_SUCCEEDED(sqstd_loadfile(v,filename,SQTrue,false))){
                     const SQChar *outfile = _SC("out.cnut");
@@ -202,7 +195,7 @@ int getargs(HSQUIRRELVM v,int argc, char* argv[],SQInteger *retval)
                 if(SQ_SUCCEEDED(sqstd_loadfile(v,filename,SQTrue,use_peg))) {
                     int callargs = 1;
                     sq_pushroottable(v);
-                    for(i=arg;i<argc;i++)
+                    for(int i=arg;i<argc;i++)
                     {
                         const SQChar *a;
 #ifdef SQUNICODE
@@ -359,6 +352,7 @@ int main(int argc, char* argv[])
     module_mgr->registerBaseLibs();
     module_mgr->registerIoLib();
     module_mgr->registerSystemLib();
+    module_mgr->registerDateTimeLib();
 
     sqstd_register_command_line_args(v, argc, argv);
 

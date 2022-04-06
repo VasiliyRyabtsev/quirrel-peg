@@ -16,7 +16,7 @@
 SQSharedState::SQSharedState(SQAllocContext allocctx) :
     _alloc_ctx(allocctx),
     _refs_table(allocctx),
-    defaultLangFeatures(0)
+    defaultLangFeatures(LF_NO_FUNC_DECL_SUGAR | LF_NO_CLASS_DECL_SUGAR)
 {
     _compilererrorhandler = NULL;
     _printfunc = NULL;
@@ -300,6 +300,7 @@ SQInteger SQSharedState::ResurrectUnreachable(SQVM *vm)
                 SQObject sqo;
                 sqo._type = type;
                 sqo._unVal.pRefCounted = t;
+                sqo._flags = 0; //< FIXME: we lose information on mutability, so it turns everyhing into mutable
                 ret->Append(sqo);
             }
             t = t->_next;
@@ -447,8 +448,8 @@ SQUnsignedInteger RefTable::GetRefCount(SQObject &obj)
 {
      SQHash mainpos;
      RefNode *prev;
-     RefNode *ref = Get(obj,mainpos,&prev,true);
-     return ref->refs;
+     RefNode *ref = Get(obj,mainpos,&prev,false);
+     return ref ? ref->refs : 0;
 }
 
 

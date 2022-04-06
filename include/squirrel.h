@@ -66,9 +66,12 @@ struct SQOuter;
 
 #include "sqconfig.h"
 
-#define SQUIRREL_VERSION    _SC("Quirrel 4.0 stable")
-#define SQUIRREL_COPYRIGHT  _SC("Copyright (C) 2003-2016 Alberto Demichelis; 2016-2019 Gaijin Entertainment")
-#define SQUIRREL_VERSION_NUMBER 400
+#define SQUIRREL_VERSION_NUMBER_MAJOR 4
+#define SQUIRREL_VERSION_NUMBER_MINOR 5
+#define SQUIRREL_VERSION_NUMBER_PATCH 0
+
+#define SQUIRREL_VERSION    _SC("4.5.0")
+#define SQUIRREL_COPYRIGHT  _SC("Copyright (C) 2003-2016 Alberto Demichelis; 2016-2021 Gaijin Entertainment")
 
 #define SQ_VMSTATE_IDLE         0
 #define SQ_VMSTATE_RUNNING      1
@@ -81,6 +84,8 @@ struct SQOuter;
 #define SQOBJECT_NUMERIC        0x04000000
 #define SQOBJECT_DELEGABLE      0x02000000
 #define SQOBJECT_CANBEFALSE     0x01000000
+
+#define SQOBJ_FLAG_IMMUTABLE    0x01
 
 #define SQ_MATCHTYPEMASKSTRING (-99999)
 
@@ -127,6 +132,8 @@ typedef enum tagSQObjectType{
     OT_OUTER =          (_RT_OUTER|SQOBJECT_REF_COUNTED) //internal usage only
 }SQObjectType;
 
+typedef uint8_t SQObjectFlags;
+
 #define ISREFCOUNTED(t) ((t)&SQOBJECT_REF_COUNTED)
 
 
@@ -157,6 +164,7 @@ typedef union tagSQObjectValue
 typedef struct tagSQObject
 {
     SQObjectType _type;
+    SQObjectFlags _flags;
     SQObjectValue _unVal;
 }SQObject;
 
@@ -218,14 +226,15 @@ SQUIRREL_API SQPRINTFUNCTION sq_geterrorfunc(HSQUIRRELVM v);
 SQUIRREL_API SQRESULT sq_suspendvm(HSQUIRRELVM v);
 SQUIRREL_API SQRESULT sq_wakeupvm(HSQUIRRELVM v,SQBool resumedret,SQBool retval,SQBool invoke_err_handler,SQBool throwerror);
 SQUIRREL_API SQInteger sq_getvmstate(HSQUIRRELVM v);
-SQUIRREL_API SQInteger sq_getversion();
+SQUIRREL_API SQRESULT sq_registerbaselib(HSQUIRRELVM v);
 
 /*compiler*/
-SQUIRREL_API SQRESULT sq_compile(HSQUIRRELVM v,SQLEXREADFUNC read,SQUserPointer p,const SQChar *sourcename,SQBool raiseerror);
-SQUIRREL_API SQRESULT sq_compilebuffer(HSQUIRRELVM v,const SQChar *s,SQInteger size,const SQChar *sourcename,SQBool raiseerror);
+SQUIRREL_API SQRESULT sq_compile(HSQUIRRELVM v,SQLEXREADFUNC read,SQUserPointer p,const SQChar *sourcename,SQBool raiseerror,const HSQOBJECT *bindings=nullptr);
+SQUIRREL_API SQRESULT sq_compilebuffer(HSQUIRRELVM v,const SQChar *s,SQInteger size,const SQChar *sourcename,SQBool raiseerror,const HSQOBJECT *bindings=nullptr);
 SQUIRREL_API SQRESULT sq_compilepeg(HSQUIRRELVM v,const SQChar *s,SQInteger size,const SQChar *sourcename,SQBool raiseerror,const HSQOBJECT *bindings=nullptr);
 SQUIRREL_API void sq_enabledebuginfo(HSQUIRRELVM v, SQBool enable);
 SQUIRREL_API void sq_enablevartrace(HSQUIRRELVM v, SQBool enable);
+SQUIRREL_API SQBool sq_isvartracesupported();
 SQUIRREL_API void sq_lineinfo_in_expressions(HSQUIRRELVM v, SQBool enable);
 SQUIRREL_API void sq_notifyallexceptions(HSQUIRRELVM v, SQBool enable);
 SQUIRREL_API void sq_setcompilererrorhandler(HSQUIRRELVM v,SQCOMPILERERROR f);
@@ -326,6 +335,7 @@ SQUIRREL_API SQRESULT sq_setfreevariable(HSQUIRRELVM v,SQInteger idx,SQUnsignedI
 SQUIRREL_API SQRESULT sq_next(HSQUIRRELVM v,SQInteger idx);
 SQUIRREL_API SQRESULT sq_getweakrefval(HSQUIRRELVM v,SQInteger idx);
 SQUIRREL_API SQRESULT sq_clear(HSQUIRRELVM v,SQInteger idx);
+SQUIRREL_API SQRESULT sq_freeze(HSQUIRRELVM v, SQInteger idx);
 
 /*calls*/
 SQUIRREL_API SQRESULT sq_call(HSQUIRRELVM v,SQInteger params,SQBool retval,SQBool invoke_err_handler);
@@ -398,6 +408,7 @@ SQUIRREL_API void sq_setnativedebughook(HSQUIRRELVM v,SQDEBUGHOOK hook);
 #define sq_isbool(o) ((o)._type==OT_BOOL)
 #define sq_isweakref(o) ((o)._type==OT_WEAKREF)
 #define sq_type(o) ((o)._type)
+#define sq_objflags(o) ((o)._flags)
 
 
 #define SQ_OK (0)

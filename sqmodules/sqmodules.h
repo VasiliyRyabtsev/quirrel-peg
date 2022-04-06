@@ -67,13 +67,14 @@ public:
   void  registerBaseLibs();
   void  registerSystemLib();
   void  registerIoLib();
+  void  registerDateTimeLib();
 
 private:
   // Script API
   //   require(file_name, must_exist=true)
   template<bool must_exist> static SQInteger sqRequire(HSQUIRRELVM vm);
 
-  void  bindRequireApi(HSQOBJECT module_this);
+  void  bindRequireApi(HSQOBJECT bindings);
 
   void  resolveFileName(const char *fn, std::string &res);
   bool  checkCircularReferences(const char *resolved_fn, const char *orig_fn);
@@ -83,8 +84,9 @@ private:
     FileNotFound,
     CompilationFailed
   };
-  CompileScriptResult compileScript(const char *resolved_fn, const char *orig_fn, SqObjPtr &script_closure, std::string &out_err_msg);
-  SqObjPtr  setupStateStorage(HSQOBJECT hContext, const char *resolved_fn);
+  CompileScriptResult compileScript(const char *resolved_fn, const char *orig_fn, const HSQOBJECT *bindings,
+                                    SqObjPtr &script_closure, std::string &out_err_msg);
+  SqObjPtr  setupStateStorage(const char *resolved_fn);
   Module * findModule(const char * resolved_fn);
 
   typedef SQInteger (*RegFunc)(HSQUIRRELVM);
